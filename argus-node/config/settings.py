@@ -32,8 +32,10 @@ class NodeConfig:
     mqtt_topic_prefix: str = "argus"       # Topics: argus/<node_id>/detection, argus/<node_id>/heartbeat
 
     # ---- GPS ----
-    gps_serial_port: str = "/dev/ttyAMA0"
+    gps_serial_port: str = "/dev/ttyACM0"
     gps_baud: int = 9600
+    gps_mode: str = "usb"          # "usb" or "uart"
+    gps_auto_detect: bool = True   # scan candidate ports if configured port not found
 
     # ---- Wi-Fi NAN ----
     wifi_enabled: bool = True

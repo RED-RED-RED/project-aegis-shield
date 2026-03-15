@@ -58,13 +58,21 @@ class AnalysisPipeline:
         drone = event.drone
 
         # ── Step 1: Trilateration ──────────────────────────────────────────
+        # Fetch survey_complete for this node so the WLS weighting can
+        # apply a 3x confidence multiplier for surveyed nodes.
+        node_row = await conn.fetchrow(
+            "SELECT survey_complete FROM nodes WHERE node_id = $1", event.node_id
+        )
+        survey_complete = bool(node_row["survey_complete"]) if node_row else False
+
         obs = NodeObservation(
-            node_id  = event.node_id,
-            node_lat = event.node_position.lat,
-            node_lon = event.node_position.lon,
-            node_alt = event.node_position.alt,
-            rssi     = event.rssi or -80,
-            ts       = event.ts,
+            node_id         = event.node_id,
+            node_lat        = event.node_position.lat,
+            node_lon        = event.node_position.lon,
+            node_alt        = event.node_position.alt,
+            rssi            = event.rssi or -80,
+            ts              = event.ts,
+            survey_complete = survey_complete,
         )
 
         mlat: Optional[TrilaterationResult] = self._trilat.update(

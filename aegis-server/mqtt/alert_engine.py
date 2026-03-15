@@ -23,7 +23,7 @@ from collections import defaultdict
 
 from core.config import Settings
 from db.database import get_pool
-from models.schemas import DetectionEvent
+from models.schemas import DetectionEvent, NodeHeartbeat
 from mqtt.ws_broadcaster import WSBroadcaster
 
 log = logging.getLogger("alerts")
@@ -144,6 +144,35 @@ class AlertEngine:
                 continue
             self._dedup[key] = now_ts
             await self._emit(alert)
+
+    async def evaluate_heartbeat(self, hb: NodeHeartbeat):
+        """
+        Evaluate a heartbeat for GPS jamming. Fires a MEDIUM alert when
+        jamming_state is set and not 'ok'. Deduplicated per node_id with
+        a 60 second suppression window.
+        """
+        if not hb.jamming_state or hb.jamming_state == "ok":
+            return
+
+        key = ("gps_jamming", hb.node_id)
+        now_ts = time.time()
+        if now_ts - self._dedup[key] < self.settings.alert_dedup_window_s:
+            return
+        self._dedup[key] = now_ts
+
+        await self._emit({
+            "level":    "medium",
+            "category": "gps_jamming",
+            "title":    f"GPS jamming detected on {hb.node_id}",
+            "description": (
+                f"Node {hb.node_id} reports GPS jamming_state='{hb.jamming_state}'. "
+                f"Position data from this node may be unreliable."
+            ),
+            "drone_id": None,
+            "node_id":  hb.node_id,
+            "lat":      hb.gps.get("lat"),
+            "lon":      hb.gps.get("lon"),
+        })
 
     async def node_offline(self, node_id: str):
         """Called by the status handler when a node goes offline."""

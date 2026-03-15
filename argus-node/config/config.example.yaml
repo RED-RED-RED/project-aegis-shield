@@ -18,10 +18,13 @@ mqtt:
   tls: false
   topic_prefix: "argus"
 
-# ---- GPS (u-blox NEO-M8N on UART) ----
+# ---- GPS (u-blox NEO-M9N on USB — recommended default) ----
 gps:
-  serial_port: "/dev/ttyAMA0"
+  serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
+  # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
   baud: 9600
+  mode: "usb"                   # "usb" or "uart"
+  auto_detect: true             # scan common ports if configured port not found
 
 # ---- Wi-Fi NAN (Alfa AWUS036ACM) ----
 wifi:

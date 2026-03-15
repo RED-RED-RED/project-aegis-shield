@@ -250,21 +250,26 @@ class MQTTSubscriber:
                 INSERT INTO nodes (
                     node_id, status, last_seen,
                     lat, lon, alt, gps_fix, satellites,
-                    cpu_pct, mem_pct, disk_pct, temp_c, uptime_s
-                ) VALUES ($1, 'online', to_timestamp($2), $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    cpu_pct, mem_pct, disk_pct, temp_c, uptime_s,
+                    jamming_state, spoofing_state, survey_complete
+                ) VALUES ($1, 'online', to_timestamp($2), $3, $4, $5, $6, $7,
+                          $8, $9, $10, $11, $12, $13, $14, $15)
                 ON CONFLICT (node_id) DO UPDATE SET
-                    status      = 'online',
-                    last_seen   = to_timestamp($2),
-                    lat         = $3,
-                    lon         = $4,
-                    alt         = $5,
-                    gps_fix     = $6,
-                    satellites  = $7,
-                    cpu_pct     = $8,
-                    mem_pct     = $9,
-                    disk_pct    = $10,
-                    temp_c      = $11,
-                    uptime_s    = $12
+                    status          = 'online',
+                    last_seen       = to_timestamp($2),
+                    lat             = $3,
+                    lon             = $4,
+                    alt             = $5,
+                    gps_fix         = $6,
+                    satellites      = $7,
+                    cpu_pct         = $8,
+                    mem_pct         = $9,
+                    disk_pct        = $10,
+                    temp_c          = $11,
+                    uptime_s        = $12,
+                    jamming_state   = $13,
+                    spoofing_state  = $14,
+                    survey_complete = $15
             """,
                 hb.node_id, hb.ts,
                 hb.gps.get("lat", 0.0),
@@ -277,7 +282,13 @@ class MQTTSubscriber:
                 hb.system.get("disk_pct"),
                 hb.system.get("temp_c"),
                 hb.system.get("uptime_s"),
+                hb.jamming_state,
+                hb.spoofing_state,
+                hb.gps.get("survey_complete", False),
             )
+
+        # Fire GPS jamming alert if needed
+        await self.alert_engine.evaluate_heartbeat(hb)
 
         await self.broadcaster.broadcast_node_update(hb.node_id, "online", payload)
 

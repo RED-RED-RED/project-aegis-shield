@@ -35,7 +35,7 @@ LOG_DIR="/var/log/argus-node"
 UNATTENDED=false
 OPT_NODE_ID=""; OPT_SERVER_IP=""; OPT_MQTT_PASS=""
 OPT_MQTT_USER="rid"; OPT_WIFI_IFACE="wlan1"; OPT_SDR=false
-OPT_REPO=""
+OPT_REPO=""; OPT_GPS_MODE="usb"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     --wifi-iface)    OPT_WIFI_IFACE="$2"; shift;;
     --enable-sdr)    OPT_SDR=true;;
     --repo)          OPT_REPO="$2";       shift;;
+    --gps-mode)      OPT_GPS_MODE="$2";   shift;;
     *) warn "Unknown argument: $1";;
   esac
   shift 2>/dev/null || true
@@ -88,6 +89,9 @@ if [[ "$UNATTENDED" == false ]]; then
 
   read -rp "  Enable RTL-SDR scanner? [y/N]: " SDR_RESP
   [[ "${SDR_RESP,,}" == "y" ]] && ENABLE_SDR=true || ENABLE_SDR=false
+
+  read -rp "  GPS mode — usb (NEO-M9N) or uart (legacy NEO-M8N) [usb]: " GPS_MODE_RESP
+  GPS_MODE="${GPS_MODE_RESP:-usb}"
 else
   NODE_ID="${OPT_NODE_ID:-$(hostname | tr '[:lower:]' '[:upper:]')}"
   SERVER_IP="$OPT_SERVER_IP"
@@ -95,17 +99,20 @@ else
   MQTT_PASS="$OPT_MQTT_PASS"
   WIFI_IFACE="$OPT_WIFI_IFACE"
   ENABLE_SDR="$OPT_SDR"
+  GPS_MODE="$OPT_GPS_MODE"
   [[ -n "$SERVER_IP" ]] || fail "--server-ip is required in unattended mode"
   [[ -n "$MQTT_PASS"  ]] || fail "--mqtt-password is required in unattended mode"
 fi
 
 SDR_STR="false"; [[ "$ENABLE_SDR" == true ]] && SDR_STR="true"
+GPS_MODE="${GPS_MODE:-usb}"
 
 echo ""
 info "Node ID  : ${BOLD}${NODE_ID}${NC}"
 info "Server   : ${BOLD}${SERVER_IP}${NC}"
 info "Wi-Fi    : ${WIFI_IFACE}mon"
 info "SDR      : ${SDR_STR}"
+info "GPS mode : ${GPS_MODE}"
 echo ""
 
 # ── 1/8  System packages ─────────────────────────────────────────────────
@@ -129,20 +136,33 @@ cat > /etc/udev/rules.d/20-rtlsdr.rules << 'UDEV'
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", \
   GROUP="plugdev", MODE="0666", SYMLINK+="rtl_sdr"
 UDEV
-udevadm control --reload-rules
 ok "RTL-SDR udev rules set"
 
-# Enable UART for GPS
-for CFG in /boot/firmware/config.txt /boot/config.txt; do
-  [[ -f "$CFG" ]] || continue
-  grep -q "enable_uart=1" "$CFG" || echo "enable_uart=1" >> "$CFG"
-  ok "UART enabled in $CFG"
-  break
-done
+# u-blox USB GPS udev rule — stable /dev/ttyGPS symlink for NEO-M9N
+# Vendor 1546 = u-blox, Product 01a9 = NEO-M9N
+cat > /etc/udev/rules.d/21-ublox-gps.rules << 'UDEV'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", \
+  SYMLINK+="ttyGPS", MODE="0666"
+UDEV
+ok "u-blox GPS udev rule set (/dev/ttyGPS symlink for NEO-M9N)"
 
-# Disable serial console (frees UART for GPS)
-raspi-config nonint do_serial_cons 1 2>/dev/null && ok "Serial console disabled" || \
-  warn "Could not disable serial console via raspi-config — do it manually"
+udevadm control --reload-rules
+udevadm trigger
+
+# UART-specific setup — only needed for legacy UART GPS (mode=uart)
+if [[ "$GPS_MODE" == "uart" ]]; then
+  info "Configuring UART for legacy GPS…"
+  for CFG in /boot/firmware/config.txt /boot/config.txt; do
+    [[ -f "$CFG" ]] || continue
+    grep -q "enable_uart=1" "$CFG" || echo "enable_uart=1" >> "$CFG"
+    ok "UART enabled in $CFG"
+    break
+  done
+  raspi-config nonint do_serial_cons 1 2>/dev/null && ok "Serial console disabled" || \
+    warn "Could not disable serial console via raspi-config — do it manually"
+else
+  info "USB GPS mode — UART configuration skipped"
+fi
 
 # ── 3/8  Fetch code ───────────────────────────────────────────────────────
 step 3 "Fetching AEGIS platform code"
@@ -184,8 +204,11 @@ mqtt:
   topic_prefix: "argus"
 
 gps:
-  serial_port: "/dev/ttyAMA0"
+  serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
+  # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
   baud: 9600
+  mode: "${GPS_MODE}"
+  auto_detect: true
 
 wifi:
   enabled: true
@@ -210,15 +233,37 @@ ok "Config written to $CONFIG_DIR/config.yaml"
 
 # ── 6/8  gpsd ────────────────────────────────────────────────────────────
 step 6 "GPS daemon (gpsd)"
-cat > /etc/default/gpsd << 'GPSD'
+
+if [[ "$GPS_MODE" == "uart" ]]; then
+  GPS_DEVICE="/dev/ttyAMA0"
+  GPSD_USBAUTO="false"
+else
+  GPS_DEVICE="/dev/ttyACM0"
+  GPSD_USBAUTO="true"
+fi
+
+cat > /etc/default/gpsd << GPSD
 START_DAEMON="true"
 GPSD_OPTIONS="-n"
-DEVICES="/dev/ttyAMA0"
-USBAUTO="false"
+DEVICES="${GPS_DEVICE}"
+USBAUTO="${GPSD_USBAUTO}"
 GPSD
 systemctl enable gpsd --quiet
 systemctl start  gpsd 2>/dev/null && ok "gpsd started" || \
-  warn "gpsd failed to start — needs GPS module attached and UART enabled (reboot pending)"
+  warn "gpsd failed to start — GPS module may need to be attached first"
+
+# Post-install GPS device check
+if [[ "$GPS_MODE" != "uart" ]]; then
+  echo ""
+  if [[ -e "/dev/ttyACM0" || -e "/dev/ttyGPS" ]]; then
+    ok "GPS device found: $(ls /dev/ttyACM0 /dev/ttyGPS 2>/dev/null | head -1)"
+  else
+    warn "GPS device not found at /dev/ttyACM0 or /dev/ttyGPS"
+    warn "Plug in the u-blox NEO-M9N USB receiver, then run:"
+    warn "  ls /dev/ttyACM* /dev/ttyGPS"
+    warn "  sudo systemctl restart argus-node"
+  fi
+fi
 
 # ── 7/8  systemd service ──────────────────────────────────────────────────
 step 7 "systemd service"
@@ -257,9 +302,11 @@ echo -e "  ${GREEN}Service  :${NC} argus-node  (auto-starts on boot)"
 echo -e "  ${GREEN}Config   :${NC} ${CONFIG_DIR}/config.yaml"
 echo -e "  ${GREEN}Logs     :${NC} journalctl -fu argus-node"
 echo ""
-echo -e "  ${YELLOW}⚠  A reboot is required to activate UART for GPS.${NC}"
-echo ""
-echo "  Post-reboot verification:"
+if [[ "$GPS_MODE" == "uart" ]]; then
+  echo -e "  ${YELLOW}⚠  A reboot is required to activate UART for GPS.${NC}"
+  echo ""
+fi
+echo "  Post-deployment verification:"
 echo "    sudo systemctl status argus-node"
 echo "    sudo journalctl -fu argus-node"
 echo ""

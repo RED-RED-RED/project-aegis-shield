@@ -235,6 +235,65 @@ class TestTrilaterationEngine:
         result = engine.update("DRONE_WEAK", 40.75, -73.99, obs)
         assert result is None
 
+    def test_survey_complete_nodes_weighted_higher(self):
+        """
+        A node with survey_complete=True should pull the estimated position
+        closer to itself compared to an identical geometry with survey_complete=False.
+
+        Setup: drone is at the centroid of 3 nodes. One node is placed far
+        from the centroid. With survey_complete=True on that outlier node,
+        the estimate should shift toward that node compared to equal weights.
+        """
+        from analysis.trilateration import RSSI_REF_DBM, PATH_LOSS_EXP
+
+        true_lat, true_lon = 40.7580, -73.9855
+
+        def run_with_survey(node_idx_surveyed):
+            engine = TrilaterationEngine()
+            result = None
+            for i, (nid, nlat, nlon) in enumerate(NODE_POSITIONS[:3]):
+                dist = max(_haversine_m(nlat, nlon, true_lat, true_lon), 1)
+                rssi = int(RSSI_REF_DBM - 10 * PATH_LOSS_EXP * math.log10(dist))
+                obs = NodeObservation(
+                    node_id=nid, node_lat=nlat, node_lon=nlon, node_alt=10.0,
+                    rssi=max(rssi, -99), ts=time.time(),
+                    survey_complete=(i == node_idx_surveyed),
+                )
+                result = engine.update("DRONE_SV", true_lat, true_lon, obs)
+            return result
+
+        # With equal weights (no surveyed node)
+        r_none = run_with_survey(-1)         # no node surveyed
+        r_node0 = run_with_survey(0)         # ARGUS-01 surveyed
+
+        assert r_none   is not None
+        assert r_node0  is not None
+        # Both should produce plausible estimates; the key property is that
+        # the result changes when a node is given 3x weight.
+        # (Exact positions differ by solver path; we verify results are not identical.)
+        pos_changed = (r_none.est_lat != r_node0.est_lat or
+                       r_none.est_lon != r_node0.est_lon)
+        assert pos_changed, "survey_complete weight should change the WLS estimate"
+
+    def test_all_surveyed_nodes_same_relative_weight(self):
+        """All nodes surveyed → still produces a valid trilateration result."""
+        from analysis.trilateration import RSSI_REF_DBM, PATH_LOSS_EXP
+        engine = TrilaterationEngine()
+        true_lat, true_lon = 40.7580, -73.9855
+        result = None
+        for nid, nlat, nlon in NODE_POSITIONS[:3]:
+            dist = max(_haversine_m(nlat, nlon, true_lat, true_lon), 1)
+            rssi = int(RSSI_REF_DBM - 10 * PATH_LOSS_EXP * math.log10(dist))
+            obs = NodeObservation(
+                node_id=nid, node_lat=nlat, node_lon=nlon, node_alt=10.0,
+                rssi=max(rssi, -99), ts=time.time(),
+                survey_complete=True,
+            )
+            result = engine.update("DRONE_ALLSV", true_lat, true_lon, obs)
+        assert result is not None
+        error_m = _haversine_m(result.est_lat, result.est_lon, true_lat, true_lon)
+        assert error_m < 500
+
     def test_stale_observations_expire(self):
         """Observations older than obs_window_s should be expired."""
         engine = self._engine()

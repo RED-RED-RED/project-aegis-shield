@@ -114,12 +114,13 @@ SPOOF_THRESHOLD_M = 250.0
 
 @dataclass
 class NodeObservation:
-    node_id:  str
-    node_lat: float
-    node_lon: float
-    node_alt: float
-    rssi:     int        # dBm
-    ts:       float      # unix timestamp of measurement
+    node_id:         str
+    node_lat:        float
+    node_lon:        float
+    node_alt:        float
+    rssi:            int    # dBm
+    ts:              float  # unix timestamp of measurement
+    survey_complete: bool = False  # True → 3x WLS weight multiplier
 
 
 @dataclass
@@ -217,7 +218,11 @@ class TrilaterationEngine:
 
             # Weights: stronger RSSI → higher weight (inverse variance approx.)
             # RSSI variance ≈ 6 dB std dev → distance error ~ 50% per reading
-            weights = 1.0 / (distances ** 0.5)
+            # Nodes with a completed survey-in get a 3x confidence multiplier
+            survey_multipliers = np.array([
+                3.0 if o.survey_complete else 1.0 for o in observations
+            ])
+            weights = (1.0 / (distances ** 0.5)) * survey_multipliers
             weights /= weights.sum()
 
             # ── Weighted centroid as initial guess ──────────────────────────

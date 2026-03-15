@@ -92,9 +92,25 @@ async def _create_schema(pool: Pool):
                 temp_c          REAL,
                 uptime_s        INT,
                 radios          TEXT[],
+                jamming_state   VARCHAR,
+                spoofing_state  VARCHAR,
+                survey_complete BOOLEAN DEFAULT FALSE,
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
         """)
+
+        # Idempotently add new columns to existing deployments
+        for col, dtype in [
+            ("jamming_state",   "VARCHAR"),
+            ("spoofing_state",  "VARCHAR"),
+            ("survey_complete", "BOOLEAN DEFAULT FALSE"),
+        ]:
+            try:
+                await conn.execute(
+                    f"ALTER TABLE nodes ADD COLUMN IF NOT EXISTS {col} {dtype};"
+                )
+            except Exception:
+                pass
 
         # ---- detections table (TimescaleDB hypertable) ----
         await conn.execute("""

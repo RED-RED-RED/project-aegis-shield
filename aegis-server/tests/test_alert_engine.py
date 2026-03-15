@@ -15,7 +15,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from core.config import Settings
-from models.schemas import DetectionEvent, DroneData, NodePosition
+from models.schemas import DetectionEvent, DroneData, NodePosition, NodeHeartbeat
 
 
 # ------------------------------------------------------------------ #
@@ -273,3 +273,118 @@ class TestDetectionEventValidation:
     def test_transport_field(self):
         event = make_event(transport="bluetooth")
         assert event.transport == "bluetooth"
+
+
+# ------------------------------------------------------------------ #
+# GPS jamming alert tests
+# ------------------------------------------------------------------ #
+
+def make_heartbeat(node_id="ARGUS-01", jamming_state=None, spoofing_state=None):
+    return NodeHeartbeat(
+        node_id=node_id,
+        status="online",
+        ts=time.time(),
+        gps={"lat": 42.35, "lon": -71.07, "alt": 10.0, "fix": True, "sats": 8},
+        system={"cpu_pct": 20.0, "mem_pct": 40.0},
+        jamming_state=jamming_state,
+        spoofing_state=spoofing_state,
+    )
+
+
+class TestGPSJammingAlert:
+
+    def _get_engine(self, settings):
+        from mqtt.alert_engine import AlertEngine
+        return AlertEngine(settings)
+
+    @pytest.mark.asyncio
+    async def test_jamming_warning_fires_medium_alert(self, settings):
+        engine = self._get_engine(settings)
+        hb = make_heartbeat(jamming_state="warning")
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        with patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate_heartbeat(hb)
+
+        assert len(emitted) == 1
+        assert emitted[0]["category"] == "gps_jamming"
+        assert emitted[0]["level"]    == "medium"
+        assert "ARGUS-01" in emitted[0]["title"]
+
+    @pytest.mark.asyncio
+    async def test_jamming_critical_fires_alert(self, settings):
+        engine = self._get_engine(settings)
+        hb = make_heartbeat(jamming_state="critical")
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        with patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate_heartbeat(hb)
+
+        assert any(a["category"] == "gps_jamming" for a in emitted)
+
+    @pytest.mark.asyncio
+    async def test_jamming_ok_does_not_fire(self, settings):
+        engine = self._get_engine(settings)
+        hb = make_heartbeat(jamming_state="ok")
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        await engine.evaluate_heartbeat(hb)
+        assert len(emitted) == 0
+
+    @pytest.mark.asyncio
+    async def test_jamming_none_does_not_fire(self, settings):
+        engine = self._get_engine(settings)
+        hb = make_heartbeat(jamming_state=None)
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        await engine.evaluate_heartbeat(hb)
+        assert len(emitted) == 0
+
+    @pytest.mark.asyncio
+    async def test_jamming_deduplication_within_window(self, settings):
+        """Same node jamming alert should fire only once within dedup window."""
+        engine = self._get_engine(settings)
+        hb = make_heartbeat(node_id="ARGUS-02", jamming_state="warning")
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        await engine.evaluate_heartbeat(hb)
+        first_count = sum(1 for a in emitted if a["category"] == "gps_jamming")
+
+        await engine.evaluate_heartbeat(hb)
+        second_count = sum(1 for a in emitted if a["category"] == "gps_jamming")
+
+        assert first_count  == 1
+        assert second_count == 1   # deduplicated — no second emission
+
+    @pytest.mark.asyncio
+    async def test_jamming_fires_for_different_nodes_independently(self, settings):
+        """Two different nodes jamming should each generate their own alert."""
+        engine = self._get_engine(settings)
+
+        emitted = []
+        async def fake_emit(alert): emitted.append(alert)
+        engine._emit = fake_emit
+
+        await engine.evaluate_heartbeat(make_heartbeat(node_id="ARGUS-03", jamming_state="warning"))
+        await engine.evaluate_heartbeat(make_heartbeat(node_id="ARGUS-04", jamming_state="critical"))
+
+        node_ids = {a["node_id"] for a in emitted if a["category"] == "gps_jamming"}
+        assert "ARGUS-03" in node_ids
+        assert "ARGUS-04" in node_ids
