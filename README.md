@@ -100,9 +100,19 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 | Topic | Direction | Content |
 |---|---|---|
 | `argus/<id>/detection` | node → server | Full RID frame, RSSI, node GPS |
-| `argus/<id>/heartbeat` | node → server | CPU, memory, temp, GPS (10s) |
+| `argus/<id>/heartbeat` | node → server | CPU, memory, GPS fix, jamming/spoofing state, survey status (10s) |
 | `argus/<id>/status` | node → server | `online`/`offline` (LWT, retained) |
 | `argus/<id>/rf_event` | node → server | RTL-SDR RF burst (optional) |
+
+**Heartbeat extra fields (NEO-M9N only):**
+
+| Field | Values | Description |
+|---|---|---|
+| `jamming_state` | `ok` / `warning` / `critical` | Hardware GPS jamming indicator from UBX-NAV-STATUS |
+| `spoofing_state` | `ok` / `spoofing` / `multiple` | Hardware GPS spoofing indicator from UBX-NAV-STATUS |
+| `survey_complete` | `true` / `false` | Whether the node has completed survey-in |
+| `detected_port` | e.g. `/dev/ttyACM0` | Serial port the GPS daemon auto-detected |
+| `gps_mode` | `usb` / `uart` | Active GPS mode |
 
 ---
 
@@ -115,7 +125,7 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 | Single-board computer | Raspberry Pi 4 Model B (2 GB) | Host |
 | Wi-Fi adapter | Alfa AWUS036ACM | Wi-Fi NAN monitor mode (mt76x2u driver) |
 | Bluetooth dongle | Nordic nRF52840 USB (PCA10059) | BT4 + BT5 Long Range |
-| GPS module | u-blox NEO-M8N (UART) | Node geolocation |
+| GPS module | u-blox NEO-M9N (USB, recommended) or NEO-M8N (UART, legacy) | Node geolocation |
 | RTL-SDR (optional) | RTL-SDR v3 | RF fingerprinting |
 | Powered USB hub | Any 4-port | Powers all USB peripherals |
 
@@ -129,7 +139,9 @@ Any Linux machine with 2GB+ RAM and Docker. Raspberry Pi 4 works well; an old NU
 
 **nRF52840 USB dongle** — must be flashed with [Zephyr `hci_usb` firmware](https://docs.zephyrproject.org/latest/samples/bluetooth/hci_usb/README.html) to appear as a standard HCI USB device. Most cheap "BT5" dongles advertise Coded PHY support but do not implement it in firmware — the nRF52840 is the reliable exception.
 
-**u-blox NEO-M8N** — connect to Pi UART (`/dev/ttyAMA0`). The deployment script configures `gpsd` and disables the serial console automatically.
+**u-blox NEO-M9N (USB, recommended)** — plug into any Pi USB port. The driver creates `/dev/ttyACM0`; the deploy script adds a udev rule so it also appears at the stable symlink `/dev/ttyGPS`. No UART configuration or serial console changes are needed. The GPS daemon auto-detects the port at startup, initialises the receiver via UBX binary protocol, and runs a **survey-in** (10 min minimum / 3 m accuracy target) to pin the node's precise position. Once the survey completes, `survey_complete` is set in the nodes table and that node receives a **3× weight multiplier** in the WLS trilateration solver. The NEO-M9N also reports hardware **jamming** and **spoofing** state via `UBX-NAV-STATUS`; critical/warning states trigger a `gps_jamming` alert on the server.
+
+**u-blox NEO-M8N (UART, legacy)** — connect to Pi UART (`/dev/ttyAMA0`). Pass `--gps-mode uart` to the deploy script; it enables the UART in `/boot/firmware/config.txt` and disables the serial console. **A reboot is required** after this setup. The NEO-M8N does not support UBX survey-in or hardware jamming/spoofing detection.
 
 ---
 
@@ -175,32 +187,49 @@ Flash Pi OS Lite 64-bit to SD card, enable SSH, then:
 scp -r aegis-platform/ pi@argus-01.local:~/
 ssh pi@argus-01.local
 
-# Non-interactive install
-ARGUS_NODE_ID=ARGUS-01 \
-ARGUS_SERVER_IP=192.168.1.100 \
-ARGUS_MQTT_PASSWORD=yourmqttpass \
-sudo bash aegis-platform/scripts/deploy-argus-node.sh --yes
+# Interactive install — prompts for all values
+sudo bash aegis-platform/scripts/deploy-argus-node.sh
 
-# Then reboot (enables GPS UART)
-sudo reboot
+# Non-interactive install (USB GPS, default)
+sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+  --unattended \
+  --node-id ARGUS-01 \
+  --server-ip 192.168.1.100 \
+  --mqtt-password yourmqttpass
 
-# After reboot
-sudo systemctl start argus-node
+# Non-interactive install (legacy UART GPS — requires reboot)
+sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+  --unattended \
+  --node-id ARGUS-01 \
+  --server-ip 192.168.1.100 \
+  --mqtt-password yourmqttpass \
+  --gps-mode uart
+sudo reboot   # only required for uart mode
+
+# After (re)boot
+sudo systemctl status argus-node
 sudo journalctl -fu argus-node
 ```
 
-Or run interactively — the script prompts for all values and explains each option.
+Or run interactively — the script prompts for all values, including GPS mode, and explains each option.
+
+**GPS mode flag:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--gps-mode usb` | yes | u-blox NEO-M9N via USB (`/dev/ttyACM0` → `/dev/ttyGPS`) |
+| `--gps-mode uart` | no | Legacy NEO-M8N via UART (`/dev/ttyAMA0`); enables UART in boot config, reboot required |
 
 **Deploying multiple nodes:**
 
 ```bash
-# Node 1
-ARGUS_NODE_ID=ARGUS-01 ARGUS_SERVER_IP=192.168.1.100 \
-ARGUS_MQTT_PASSWORD=pass sudo bash scripts/deploy-argus-node.sh --yes
+# Node 1 (USB GPS)
+sudo bash scripts/deploy-argus-node.sh \
+  --unattended --node-id ARGUS-01 --server-ip 192.168.1.100 --mqtt-password pass
 
-# Node 2 (same command, different ID)
-ARGUS_NODE_ID=ARGUS-02 ARGUS_SERVER_IP=192.168.1.100 \
-ARGUS_MQTT_PASSWORD=pass sudo bash scripts/deploy-argus-node.sh --yes
+# Node 2
+sudo bash scripts/deploy-argus-node.sh \
+  --unattended --node-id ARGUS-02 --server-ip 192.168.1.100 --mqtt-password pass
 ```
 
 ### WireGuard VPN (optional)
@@ -336,6 +365,19 @@ GET  /api/analysis/mlat                 Drones with MLAT results (filter: min_mi
 GET  /api/analysis/stats                High/medium counts, spoofed count, average score
 ```
 
+### Alert categories
+
+| Category | Level | Trigger |
+|---|---|---|
+| `no_rid` | HIGH | Drone airborne above threshold altitude with no operator ID |
+| `speed` | MEDIUM | Horizontal speed exceeds configured threshold (default 30 m/s) |
+| `altitude` | MEDIUM | Above 400ft AGL without operator ID |
+| `spoofed_position` | HIGH | Drone reporting position at (0, 0) while airborne |
+| `new_drone` | LOW | First detection of a drone ID in the database |
+| `threat_score` | HIGH | Threat score crosses into ≥ 70 band |
+| `position_mismatch` | HIGH | MLAT estimate diverges > 250m from broadcast with spoof confidence > 60% |
+| `gps_jamming` | MEDIUM | ARGUS node reports GPS jamming (`warning` or `critical`) from UBX-NAV-STATUS |
+
 ### WebSocket
 
 `WS /ws` — Server pushes:
@@ -382,6 +424,8 @@ AEGIS uses weighted least-squares trilateration on RSSI measurements from ≥ 3 
 | Real-world (5 dB noise, suburban) | 150–250m |
 | Post-calibration improvement | ~40% reduction |
 
+**Survey-in weight multiplier:** Nodes that have completed a GPS survey-in (`survey_complete = true`) receive a **3× weight** in the WLS solver. This reflects that their position is precisely known (sub-3m accuracy) rather than estimated from a live GPS fix. Deploy nodes with NEO-M9N receivers and allow the 10-minute survey-in to complete for best MLAT accuracy.
+
 The calibration utility fits `n` and `RSSI_REF` independently per node from a calibration flight, then writes `aegis-server/analysis/calibration.yaml` which the trilateration engine loads at startup.
 
 ---
@@ -389,12 +433,12 @@ The calibration utility fits `n` and `RSSI_REF` independently per node from a ca
 ## Development
 
 ```bash
-# Run all 83 tests
+# Run all 133 tests
 make test
 
 # Individual suites
-make test-node     # 11 tests — ARGUS Node RID parser
-make test-server   # 41 tests — alert engine + trilateration + scoring
+make test-node     # 53 tests — ARGUS Node RID parser + GPS subsystem
+make test-server   # 49 tests — alert engine + trilateration + scoring
 
 # Start server
 make server-up && make server-logs
@@ -412,10 +456,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and workflow.
 | Module | Tests |
 |---|---|
 | ARGUS Node — OpenDroneID parser | 11 |
-| AEGIS Server — alert engine | 13 |
-| AEGIS Server — trilateration + threat scoring | 28 |
+| ARGUS Node — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 42 |
+| AEGIS Server — alert engine (rules + GPS jamming alerts) | 19 |
+| AEGIS Server — trilateration + threat scoring | 30 |
 | Calibration — engine, collector, config writer | 31 |
-| **Total** | **83** |
+| **Total** | **133** |
 
 ---
 

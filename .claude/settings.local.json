@@ -6,7 +6,9 @@
       "Bash(docker run:*)",
       "Bash(docker compose:*)",
       "Bash(docker exec:*)",
-      "Bash(docker cp:*)"
+      "Bash(docker cp:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)"
     ]
   }
 }
