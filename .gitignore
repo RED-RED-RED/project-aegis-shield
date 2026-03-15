@@ -1,6 +1,8 @@
 # ── Secrets & local config ─────────────────────────────────────
 aegis-server/docker/.env
 aegis-server/docker/mosquitto_passwd
+aegis-server/docker/passwd
+aegis-server/docker/docker-compose.override.yml
 aegis-server/analysis/calibration.yaml
 
 # ── Python ─────────────────────────────────────────────────────
