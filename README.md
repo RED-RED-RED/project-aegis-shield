@@ -178,6 +178,31 @@ systemctl status aegis-server
 cd /opt/aegis/aegis-server/docker && docker compose logs -f aegis-server
 ```
 
+### API authentication
+
+All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default** (safe for trusted LAN deployments). To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
+
+```env
+AEGIS_API_KEY=your-secret-key-here
+```
+
+Once set, every request must include the key as a header:
+
+```
+X-Api-Key: your-secret-key-here
+```
+
+The `/health` endpoint is always unauthenticated.
+
+If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
+
+```env
+# aegis-shield/.env.production
+VITE_API_KEY=your-secret-key-here
+```
+
+> **Recommendation:** Enable API key auth whenever AEGIS Server is reachable from outside your local network, such as over WireGuard VPN or a public interface.
+
 ### ARGUS Node deployment
 
 Flash Pi OS Lite 64-bit to SD card, enable SSH, then:
