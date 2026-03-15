@@ -54,15 +54,23 @@ async def _live_state_pusher(ws: WebSocket):
     """
     Periodically builds a full live state snapshot and sends it to one client.
     Runs as a background task per connection.
+
+    A query_running guard prevents a new DB query from starting if the previous
+    one hasn't finished yet — this stops connection-pool exhaustion when the DB
+    is slow.
     """
     interval = settings.ws_broadcast_interval_ms / 1000.0
+    query_running = False
 
     while True:
-        try:
-            state = await _build_live_state()
-            await ws.send_json({"type": "live_state", "payload": state})
-        except Exception:
-            break   # Connection is gone
+        if not query_running:
+            try:
+                query_running = True
+                state = await _build_live_state()
+                query_running = False
+                await ws.send_json({"type": "live_state", "payload": state})
+            except Exception:
+                break   # Connection is gone
         await asyncio.sleep(interval)
 
 

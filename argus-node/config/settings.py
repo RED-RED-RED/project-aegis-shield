@@ -99,4 +99,7 @@ def _apply_env(cfg: NodeConfig):
     for env_key, (attr, cast) in overrides.items():
         val = os.environ.get(env_key)
         if val is not None:
-            setattr(cfg, attr, cast(val))
+            try:
+                setattr(cfg, attr, cast(val))
+            except (ValueError, TypeError) as e:
+                print(f"[config] Warning: invalid value for {env_key}={val!r}: {e} — using default")

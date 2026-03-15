@@ -92,9 +92,11 @@ class MQTTSubscriber:
     async def _dispatch(self, topic: str, payload: dict):
         """Route incoming MQTT message to the right handler."""
         parts = topic.split("/")
-        if len(parts) < 3:
+        # Require exactly <prefix>/<node_id>/<type> — reject malformed topics
+        if len(parts) != 3:
+            log.warning(f"Ignoring message on unexpected topic: {topic}")
             return
-        msg_type = parts[-1]
+        msg_type = parts[2]
 
         if msg_type == "detection":
             await self._handle_detection(payload)

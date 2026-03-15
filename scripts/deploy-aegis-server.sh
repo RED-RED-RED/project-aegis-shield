@@ -101,7 +101,7 @@ if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; the
   ok "Docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1) already installed"
 elif [[ "$OPT_SKIP_DOCKER" == false ]]; then
   info "Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
+  curl -fsSL --max-time 120 https://get.docker.com | sh
   # Add current user to docker group
   [[ -n "${SUDO_USER:-}" ]] && usermod -aG docker "$SUDO_USER" || true
   ok "Docker installed"
@@ -153,6 +153,8 @@ else
     mosquitto_passwd -c -b /dev/stdout rid "$MQTT_PASS" \
     > "$DOCKER_DIR/mosquitto_passwd"
 fi
+[[ -s "$DOCKER_DIR/mosquitto_passwd" ]] || fail "Mosquitto password file is empty or missing"
+chmod 644 "$DOCKER_DIR/mosquitto_passwd"
 ok "Mosquitto password file created"
 
 # ── 4/7  Build AEGIS Shield (UI) ─────────────────────────────────────────
@@ -163,7 +165,7 @@ if [[ "$OPT_SKIP_UI" == false ]]; then
     info "Node.js $NODE_VER found"
   else
     info "Installing Node.js LTS..."
-    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+    curl -fsSL --max-time 120 https://deb.nodesource.com/setup_lts.x | bash -
     apt-get install -y nodejs
     ok "Node.js installed"
   fi
@@ -184,8 +186,9 @@ docker compose pull --quiet
 docker compose up -d --build
 ok "Docker stack started"
 
-# Wait for health checks
+# Wait for health checks (up to 60 s)
 info "Waiting for services to become healthy..."
+HEALTHY=0
 for i in $(seq 1 30); do
   HEALTHY=$(docker compose ps --format json 2>/dev/null | \
     python3 -c "import sys,json; \
@@ -193,11 +196,17 @@ for i in $(seq 1 30); do
       rows=[json.loads(l) for l in data.splitlines() if l.strip()]; \
       print(sum(1 for r in rows if r.get('Health','')=='healthy'))" 2>/dev/null || echo "0")
   [[ "$HEALTHY" -ge 2 ]] && break
-  printf "  Waiting... (%ds)\r" "$i"
+  printf "  Waiting... (%ds)\r" "$((i * 2))"
   sleep 2
 done
 echo ""
-ok "Services healthy"
+if [[ "$HEALTHY" -lt 2 ]]; then
+  warn "Services did not become healthy in 60s — check logs:"
+  warn "  docker compose -f $DOCKER_DIR/docker-compose.yml logs --tail=40"
+  warn "Continuing, but the deployment may need attention."
+else
+  ok "Services healthy ($HEALTHY containers)"
+fi
 cd "$INSTALL_DIR"
 
 # ── 6/7  Run tests ────────────────────────────────────────────────────────

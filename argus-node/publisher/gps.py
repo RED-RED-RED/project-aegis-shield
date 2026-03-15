@@ -174,7 +174,7 @@ def save_survey_state(
     alt_m: float = 0.0,
     path: Path = SURVEY_STATE_PATH,
 ) -> None:
-    """Write survey completion state to survey.json."""
+    """Write survey completion state to survey.json atomically (write-then-rename)."""
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "complete":  True,
@@ -184,15 +184,21 @@ def save_survey_state(
         "acc_m":     acc_m,
         "timestamp": time.time(),
     }
+    tmp_path = path.with_suffix(".tmp")
     try:
-        with open(path, "w") as f:
+        with open(tmp_path, "w") as f:
             json.dump(data, f)
+        tmp_path.replace(path)   # atomic on POSIX; safe on Windows too in Python 3.3+
         log.info(
             f"Survey state saved: lat={lat:.7f} lon={lon:.7f} "
             f"alt={alt_m:.1f}m acc={acc_m:.3f}m"
         )
     except Exception as e:
         log.error(f"Could not save survey state: {e}")
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 # ── NMEA validation ────────────────────────────────────────────────────────
@@ -226,6 +232,11 @@ def _probe_port(port: str, baud: int, timeout: float = 3.0) -> bool:
                         return True
                 except serial.SerialException:
                     return False
+    except PermissionError:
+        log.warning(
+            f"Permission denied opening {port} — "
+            f"add user to 'dialout' group: sudo usermod -aG dialout $USER"
+        )
     except (serial.SerialException, OSError):
         pass
     return False

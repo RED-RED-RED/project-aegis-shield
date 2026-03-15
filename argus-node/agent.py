@@ -16,6 +16,7 @@ Author: AEGIS project
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 import threading
@@ -32,12 +33,17 @@ from publisher.gps import GPSDaemon
 # --------------------------------------------------------------------------- #
 # Logging
 # --------------------------------------------------------------------------- #
+_LOG_DIR = "/var/log/argus-node"
+_LOG_FILE = f"{_LOG_DIR}/argus-node.log"
+
+os.makedirs(_LOG_DIR, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/var/log/argus-node/argus-node.log"),
+        logging.FileHandler(_LOG_FILE),
     ],
 )
 log = logging.getLogger("agent")
