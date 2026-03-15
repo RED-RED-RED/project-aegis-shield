@@ -1,0 +1,46 @@
+# /etc/argus-node/config.yaml
+# ============================================================
+# AEGIS ARGUS Node Configuration
+# Hardware: Raspberry Pi 4 Model B (2 GB)
+# Copy to /etc/argus-node/config.yaml on each Pi node.
+# Override any value with environment variables (see settings.py).
+# ============================================================
+
+node_id: "ARGUS-01"          # Unique ID for this ARGUS node
+site_name: "perimeter-north"
+
+# ---- MQTT (AEGIS platform) ----
+mqtt:
+  host: "192.168.1.100"     # IP of your AEGIS platform
+  port: 1883
+  user: "argus"
+  password: "changeme"
+  tls: false
+  topic_prefix: "argus"
+
+# ---- GPS (u-blox NEO-M8N on UART) ----
+gps:
+  serial_port: "/dev/ttyAMA0"
+  baud: 9600
+
+# ---- Wi-Fi NAN (Alfa AWUS036ACM) ----
+wifi:
+  enabled: true
+  iface: "wlan1mon"         # Must be in monitor mode before agent starts
+  channel: 6
+
+# ---- Bluetooth (nRF52840 dongle) ----
+bt:
+  enabled: true
+  hci_index: 0              # hci0
+  coded_phy: true           # BT5 Long Range — disable if dongle doesn't support it
+
+# ---- RTL-SDR (optional) ----
+sdr:
+  enabled: false            # Set true if RTL-SDR is plugged in
+  device_index: 0
+
+# ---- Agent behaviour ----
+heartbeat_interval_s: 10
+dedup_window_s: 2.0
+max_queue_size: 1000

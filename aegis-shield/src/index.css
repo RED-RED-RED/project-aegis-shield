@@ -1,0 +1,140 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&family=Exo+2:wght@300;400;600&display=swap');
+
+/* ─── PALETTE ─────────────────────────────────────────────────────── */
+:root {
+  --bg0:         #080b0e;
+  --bg1:         #0d1318;
+  --bg2:         #111c24;
+  --bg3:         #172230;
+  --border:      #1e3040;
+  --border-hi:   #2a4560;
+
+  --amber:       #e8a020;
+  --amber-dim:   #7a5010;
+  --amber-glow:  rgba(232,160,32,0.15);
+  --phosphor:    #39ff8a;
+  --phosphor-dim:#1a5c3a;
+  --phosphor-glow: rgba(57,255,138,0.12);
+  --danger:      #ff3f5a;
+  --danger-dim:  #5c1020;
+  --danger-glow: rgba(255,63,90,0.15);
+  --ice:         #7ecfea;
+  --ice-dim:     #1a3a4a;
+  --muted:       #3a5570;
+  --text:        #c8dce8;
+  --text-dim:    #6a8a9a;
+
+  --mono:        'Share Tech Mono', monospace;
+  --cond:        'Barlow Condensed', sans-serif;
+  --body:        'Exo 2', sans-serif;
+}
+
+/* ─── RESET ────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--body);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Subtle scanline overlay on entire app */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+}
+
+/* ─── SCROLLBARS ───────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+/* ─── LEAFLET OVERRIDES ────────────────────────────────────────────── */
+.leaflet-container {
+  background: var(--bg0) !important;
+  font-family: var(--mono) !important;
+}
+.leaflet-tile {
+  filter: brightness(0.35) saturate(0.4) hue-rotate(180deg) !important;
+}
+.leaflet-control-zoom {
+  border: 1px solid var(--border) !important;
+  background: var(--bg2) !important;
+  box-shadow: none !important;
+}
+.leaflet-control-zoom a {
+  background: var(--bg2) !important;
+  color: var(--text-dim) !important;
+  border-color: var(--border) !important;
+  font-size: 16px !important;
+  line-height: 26px !important;
+}
+.leaflet-control-zoom a:hover {
+  background: var(--bg3) !important;
+  color: var(--amber) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(8,11,14,0.7) !important;
+  color: var(--muted) !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a { color: var(--muted) !important; }
+.leaflet-popup-content-wrapper {
+  background: var(--bg2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6) !important;
+  color: var(--text) !important;
+}
+.leaflet-popup-tip { background: var(--bg2) !important; }
+
+/* ─── UTILITY CLASSES ─────────────────────────────────────────────── */
+.mono        { font-family: var(--mono); }
+.cond        { font-family: var(--cond); }
+.text-amber  { color: var(--amber); }
+.text-green  { color: var(--phosphor); }
+.text-danger { color: var(--danger); }
+.text-ice    { color: var(--ice); }
+.text-muted  { color: var(--text-dim); }
+.text-dim    { color: var(--muted); }
+
+/* ─── PULSE ANIMATIONS ────────────────────────────────────────────── */
+@keyframes pulse-amber {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--amber-glow); }
+  50%       { opacity: 0.7; box-shadow: 0 0 0 6px transparent; }
+}
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+@keyframes pulse-danger {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--danger); }
+  50%       { opacity: 0.5; box-shadow: 0 0 2px var(--danger); }
+}
+@keyframes sweep-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  49%       { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.anim-sweep  { animation: sweep-in 0.25s ease both; }
+.anim-fadein { animation: fade-in 0.4s ease both; }

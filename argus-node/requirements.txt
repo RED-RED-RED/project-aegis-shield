@@ -1,0 +1,20 @@
+# requirements.txt — AEGIS ARGUS Node
+# Install with: pip install -r requirements.txt
+
+# Core
+paho-mqtt==1.6.1          # MQTT client
+pynmea2==1.19.0           # NMEA GPS sentence parser
+pyserial==3.5             # Serial port for GPS
+PyYAML==6.0.1             # Config file parsing
+psutil==5.9.8             # System health metrics
+
+# Wi-Fi NAN scanning
+scapy==2.5.0              # Packet capture and 802.11 frame parsing
+
+# Bluetooth scanning
+bleak==0.21.1             # Cross-platform BLE (async)
+
+# SDR — practical on Pi 4 with USB 3.0 (comment out if not using RTL-SDR)
+pyrtlsdr==0.3.0
+numpy==1.26.4
+scipy==1.12.0

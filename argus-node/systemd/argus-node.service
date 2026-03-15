@@ -1,0 +1,23 @@
+[Unit]
+Description=AEGIS ARGUS Node
+Documentation=https://github.com/your-org/aegis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/argus-node
+ExecStartPre=/opt/argus-node/scripts/setup_interfaces.sh
+ExecStart=/opt/argus-node/venv/bin/python agent.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment="ARGUS_CONFIG=/etc/argus-node/config.yaml"
+
+# Give the service permission to use raw sockets (for HCI + monitor mode)
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target
