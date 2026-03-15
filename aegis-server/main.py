@@ -19,10 +19,11 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import detections, nodes, alerts, websocket, analysis
+from core.auth import require_api_key
 from core.config import get_settings
 from db.database import init_db, close_db
 from mqtt.subscriber import MQTTSubscriber
@@ -86,14 +87,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# REST routes
-app.include_router(detections.router, prefix="/api/detections", tags=["detections"])
-app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"])
-app.include_router(alerts.router,     prefix="/api/alerts",     tags=["alerts"])
-app.include_router(analysis.router,   prefix="/api/analysis",   tags=["analysis"])
+# REST routes — protected by API key when AEGIS_API_KEY is set
+_auth = [Depends(require_api_key)]
+app.include_router(detections.router, prefix="/api/detections", tags=["detections"], dependencies=_auth)
+app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"],       dependencies=_auth)
+app.include_router(alerts.router,     prefix="/api/alerts",     tags=["alerts"],      dependencies=_auth)
+app.include_router(analysis.router,   prefix="/api/analysis",   tags=["analysis"],    dependencies=_auth)
 
-# WebSocket
-app.include_router(websocket.router, tags=["websocket"])
+# WebSocket — protected by same API key
+app.include_router(websocket.router, tags=["websocket"], dependencies=_auth)
 
 
 @app.get("/health")

@@ -20,6 +20,7 @@ The pipeline is intentionally fire-and-forget: if it raises, the detection
 is already safely stored. Errors are logged but don't bubble up.
 """
 
+import json
 import logging
 import time
 from typing import Optional
@@ -140,7 +141,7 @@ class AnalysisPipeline:
                 drone_id,
                 threat.score,
                 threat.level,
-                str(threat.to_dict()),     # JSON stored as text for simplicity
+                json.dumps(threat.to_dict()),
                 mlat.est_lat,
                 mlat.est_lon,
                 mlat.est_radius_m,
@@ -160,7 +161,7 @@ class AnalysisPipeline:
                 drone_id,
                 threat.score,
                 threat.level,
-                str(threat.to_dict()),
+                json.dumps(threat.to_dict()),
             )
 
     # ── Alert generation ───────────────────────────────────────────────────

@@ -36,11 +36,24 @@ class AlertEngine:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.broadcaster = WSBroadcaster()
-        # Dedup: (category, drone_id | node_id) → last_alerted timestamp
+        # Dedup: (category, drone_id, node_id) → last_alerted timestamp
         self._dedup: dict[tuple, float] = defaultdict(float)
+        self._last_dedup_cleanup: float = 0.0
+
+    def _cleanup_dedup(self) -> None:
+        """Purge stale dedup entries every 5 minutes to prevent unbounded growth."""
+        now = time.time()
+        if now - self._last_dedup_cleanup < 300:
+            return
+        self._last_dedup_cleanup = now
+        cutoff = now - self.settings.alert_dedup_window_s
+        stale = [k for k, v in self._dedup.items() if v < cutoff]
+        for k in stale:
+            del self._dedup[k]
 
     async def evaluate(self, event: DetectionEvent):
         """Run all rules against a detection event."""
+        self._cleanup_dedup()
         drone = event.drone
         alerts = []
 
@@ -138,7 +151,7 @@ class AlertEngine:
 
         # Write and broadcast all generated alerts (dedup checked here)
         for alert in alerts:
-            key = (alert["category"], alert.get("drone_id") or alert.get("node_id"))
+            key = (alert["category"], alert.get("drone_id"), alert.get("node_id"))
             now_ts = time.time()
             if now_ts - self._dedup[key] < self.settings.alert_dedup_window_s:
                 continue
@@ -151,10 +164,11 @@ class AlertEngine:
         jamming_state is set and not 'ok'. Deduplicated per node_id with
         a 60 second suppression window.
         """
+        self._cleanup_dedup()
         if not hb.jamming_state or hb.jamming_state == "ok":
             return
 
-        key = ("gps_jamming", hb.node_id)
+        key = ("gps_jamming", None, hb.node_id)
         now_ts = time.time()
         if now_ts - self._dedup[key] < self.settings.alert_dedup_window_s:
             return

@@ -19,9 +19,9 @@ async def list_threats(
 ):
     """All active drones with their threat scores, sorted by score descending."""
     pool = await get_pool()
+    level_filter = level if level in ('high', 'medium', 'low') else None
     async with pool.acquire() as conn:
-        where = f"AND threat_level = '{level}'" if level in ('high','medium','low') else ""
-        rows = await conn.fetch(f"""
+        rows = await conn.fetch("""
             SELECT
                 drone_id, threat_score, threat_level, threat_factors,
                 mlat_lat, mlat_lon, mlat_radius_m, mlat_mismatch_m,
@@ -33,10 +33,10 @@ async def list_threats(
             FROM drone_tracks
             WHERE last_seen > NOW() - INTERVAL '5 minutes'
               AND threat_score IS NOT NULL
-              {where}
+              AND ($2::text IS NULL OR threat_level = $2)
             ORDER BY threat_score DESC
             LIMIT $1
-        """, limit)
+        """, limit, level_filter)
 
     result = []
     for row in rows:
@@ -44,12 +44,7 @@ async def list_threats(
         # Parse stored threat_factors JSON string back to dict
         if d.get("threat_factors"):
             try:
-                d["threat_factors"] = json.loads(
-                    d["threat_factors"]
-                    .replace("'", '"')
-                    .replace("True", "true")
-                    .replace("False", "false")
-                )
+                d["threat_factors"] = json.loads(d["threat_factors"])
             except Exception:
                 pass
         result.append(d)

@@ -148,6 +148,7 @@ class TrilaterationEngine:
         # drone_id → {node_id: NodeObservation}  (most recent per node)
         self._obs: dict[str, dict[str, NodeObservation]] = {}
         self._obs_window_s = 10.0   # Only use observations within last 10 seconds
+        self._last_obs_cleanup: float = 0.0
 
     def update(
         self,
@@ -167,14 +168,29 @@ class TrilaterationEngine:
             self._obs[drone_id] = {}
         self._obs[drone_id][observation.node_id] = observation
 
-        # Expire stale observations
+        # Expire stale observations for this drone
         now = time.time()
         self._obs[drone_id] = {
             nid: obs for nid, obs in self._obs[drone_id].items()
             if now - obs.ts < self._obs_window_s
         }
 
-        recent = list(self._obs[drone_id].values())
+        # Remove drone key entirely if all observations have expired
+        if not self._obs[drone_id]:
+            del self._obs[drone_id]
+            return None
+
+        # Periodically sweep all drone keys for stale entries (every 5 minutes)
+        if now - self._last_obs_cleanup > 300:
+            self._last_obs_cleanup = now
+            stale_drones = [
+                did for did, nodes in self._obs.items()
+                if all(now - o.ts >= self._obs_window_s for o in nodes.values())
+            ]
+            for did in stale_drones:
+                del self._obs[did]
+
+        recent = list(self._obs.get(drone_id, {}).values())
         if len(recent) < MIN_NODES:
             return None
 

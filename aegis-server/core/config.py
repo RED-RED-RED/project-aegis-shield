@@ -10,6 +10,11 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # ---- API Authentication ----
+    # Set to a non-empty string to require X-Api-Key header on all API requests.
+    # Leave empty to disable auth (development / trusted LAN only).
+    api_key: str = ""
+
     # ---- Database ----
     db_host: str = "localhost"
     db_port: int = 5432

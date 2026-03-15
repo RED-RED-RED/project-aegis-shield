@@ -174,6 +174,18 @@ async def _create_schema(pool: Pool):
             ON detections (node_id, detected_at DESC);
         """)
 
+        # Index for WebSocket live-state query (last_seen filtered on every push)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_drone_tracks_last_seen
+            ON drone_tracks (last_seen DESC);
+        """)
+
+        # Index for alert list queries (unacknowledged alerts, sorted by time)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alerts_unacked_created
+            ON alerts (acknowledged, created_at DESC);
+        """)
+
         # ---- drone_tracks table (live state, one row per drone) ----
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS drone_tracks (
