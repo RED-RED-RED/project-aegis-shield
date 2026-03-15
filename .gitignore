@@ -1,0 +1,29 @@
+# ── Secrets & local config ─────────────────────────────────────
+aegis-server/docker/.env
+aegis-server/docker/mosquitto_passwd
+aegis-server/analysis/calibration.yaml
+
+# ── Python ─────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# ── Node / UI ──────────────────────────────────────────────────
+aegis-shield/node_modules/
+aegis-shield/dist/
+
+# ── OS / editor ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.bak_*
+.vscode/
+.idea/
+*.swp
