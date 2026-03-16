@@ -27,7 +27,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from scapy.all import sniff, RadioTap, Dot11, Dot11Action, Raw
+from scapy.all import sniff, RadioTap, Dot11, Raw
 
 from parser.opendroneid import OpenDroneIDParser, RIDFrame
 from publisher.mqtt_client import MQTTPublisher
