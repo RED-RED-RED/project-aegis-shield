@@ -178,6 +178,7 @@ export default function Sidebar() {
   const activePanel  = useStore(s => s.activePanel)
   const setPanel     = useStore(s => s.setPanel)
   const selectNode   = useStore(s => s.selectNode)
+  const serverHealth = useStore(s => s.serverHealth)
 
   const highAlerts = alerts.filter(a => a.level === 'high').length
 
@@ -251,6 +252,43 @@ export default function Sidebar() {
             )
           })}
         </div>
+
+        {/* Server health */}
+        {serverHealth && (
+          <div className="sb-health" style={{borderTop:'1px solid var(--border)'}}>
+            <div style={{fontFamily:'var(--cond)',fontWeight:700,fontSize:9,letterSpacing:2,textTransform:'uppercase',color:'var(--muted)',marginBottom:6}}>
+              Server Health
+            </div>
+            {[
+              { label:'CPU', val: serverHealth.cpu_pct,  cls: serverHealth.cpu_pct  > 80 ? 'bf-danger' : 'bf-amber' },
+              { label:'MEM', val: serverHealth.mem_pct,  cls: serverHealth.mem_pct  > 85 ? 'bf-danger' : 'bf-green' },
+              { label:'DSK', val: serverHealth.disk_pct, cls: serverHealth.disk_pct > 90 ? 'bf-danger' : 'bf-amber' },
+            ].map(({ label, val, cls }) => (
+              <div key={label} className="sb-health-row">
+                <span className="sb-health-label">{label}</span>
+                <div className="sb-bar-track">
+                  <div className={`sb-bar-fill ${cls}`} style={{width:`${val}%`}}/>
+                </div>
+                <span className="sb-health-val">{val.toFixed(0)}%</span>
+              </div>
+            ))}
+            <div style={{display:'flex',gap:10,marginTop:4}}>
+              {[
+                { label:'DB',   val: serverHealth.db   },
+                { label:'MQTT', val: serverHealth.mqtt },
+              ].map(({label, val}) => (
+                <div key={label} style={{display:'flex',alignItems:'center',gap:4,fontFamily:'var(--mono)',fontSize:9,color:'var(--text-dim)'}}>
+                  <div style={{
+                    width:6,height:6,borderRadius:'50%',flexShrink:0,
+                    background: val==='ok' ? 'var(--phosphor)' : val==='warn' ? 'var(--amber)' : 'var(--danger)',
+                    boxShadow: val==='ok' ? '0 0 4px var(--phosphor)' : val==='warn' ? '0 0 4px var(--amber)' : '0 0 4px var(--danger)',
+                  }}/>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Selected node health mini-bars */}
         {selected && selected.cpu_pct != null && (
