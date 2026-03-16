@@ -27,8 +27,8 @@ warn() { echo -e "${YELLOW}  !${NC} $*"; }
 info() { echo -e "${BLUE}  →${NC} $*"; }
 step() { echo -e "\n${BOLD}[$1/7]${NC} $2"; }
 
-REPO_URL="https://github.com/your-org/aegis-platform.git"
-INSTALL_DIR="$(pwd)/aegis-platform"
+REPO_URL="https://github.com/RED-RED-RED/project-aegis-shield.git"
+INSTALL_DIR="$(pwd)/project-aegis-shield"
 DOCKER_DIR="aegis-server/docker"
 
 # ── Argument parsing ─────────────────────────────────────────────────────
@@ -194,6 +194,8 @@ if [[ "$OPT_SKIP_UI" == false ]]; then
   npm install --silent
   npm run build
   cd ..
+  [[ -f "aegis-shield/dist/index.html" ]] || fail "UI build failed — aegis-shield/dist/index.html not found"
+  chmod -R 755 aegis-shield/dist
   ok "AEGIS Shield built → aegis-shield/dist/"
 else
   warn "Skipping UI build (--skip-ui)"
