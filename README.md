@@ -36,6 +36,7 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 - [Hardware](#hardware)
 - [Deployment](#deployment)
   - [AEGIS Server](#aegis-server-deployment)
+  - [Managing the server](#managing-the-server)
   - [ARGUS Nodes](#argus-node-deployment)
   - [WireGuard VPN](#wireguard-vpn-optional)
 - [Calibration](#calibration)
@@ -172,11 +173,24 @@ The script: installs Docker, builds AEGIS Shield, generates credentials, configu
 
 Credentials are written to `aegis-server/docker/.env` — back this file up.
 
+### Managing the server
+
 ```bash
-# Useful commands after install
-systemctl status aegis-server
-cd /opt/aegis/aegis-server/docker && docker compose logs -f aegis-server
+make server-up       # Start all containers
+make server-down     # Stop all containers (data volumes are preserved)
+make server-rebuild  # Rebuild and restart the aegis-server container (use after code changes)
+make server-logs     # Follow live logs from the FastAPI container
+make server-status   # Show container status
 ```
+
+The four containers that start together:
+
+| Container | Port | Description |
+|---|---|---|
+| `nginx` | 80 | Serves AEGIS Shield UI and proxies `/api` and `/ws` |
+| `aegis-server` | 8000 (internal) | FastAPI — starts after timescaledb and mosquitto are healthy |
+| `mosquitto` | 1883 | MQTT broker (authenticated) |
+| `timescaledb` | 5432 (internal) | Time-series database |
 
 ### API authentication
 
