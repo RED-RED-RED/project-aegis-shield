@@ -36,7 +36,7 @@ export const FACTOR_LABELS = {
 }
 
 export const useStore = create((set, get) => ({
-  imperial: false,
+  imperial: true,
   toggleUnits: () => set(s => ({ imperial: !s.imperial })),
   // ── Connection ──────────────────────────────────────────────────────────
   wsStatus:  'disconnected',
