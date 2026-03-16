@@ -290,7 +290,7 @@ chmod +x "$INSTALL_DIR/argus-node/systemd/setup_interfaces.sh"
 # Patch install dir and config path if non-default location
 sed -i \
   -e "s|/opt/argus-node|${INSTALL_DIR}|g" \
-  -e "s|ARGUS_CONFIG=.*|ARGUS_CONFIG=${CONFIG_DIR}/config.yaml|" \
+  -e "s|ARGUS_CONFIG=.*\"|ARGUS_CONFIG=${CONFIG_DIR}/config.yaml\"|" \
   /etc/systemd/system/argus-node.service
 
 systemctl daemon-reload
