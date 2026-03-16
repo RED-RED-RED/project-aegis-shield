@@ -97,8 +97,7 @@ class BluetoothScanner:
         scanner = BleakScanner(
             detection_callback=self._on_advertisement,
             adapter=f"hci{self.hci_index}",
-            # We want ALL advertisements, not just connectable
-            scanning_mode="passive",
+            scanning_mode="active",
         )
 
         while not self.stop_event.is_set():
