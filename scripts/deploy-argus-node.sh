@@ -13,6 +13,8 @@
 #     --node-id ARGUS-01 \
 #     --server-ip 192.168.1.100 \
 #     --mqtt-password your_password
+#
+# MQTT username is always "rid" — set by the AEGIS Server at deploy time.
 # ============================================================
 
 set -euo pipefail
@@ -26,7 +28,7 @@ warn() { echo -e "${YELLOW}  !${NC} $*"; }
 info() { echo -e "${BLUE}  →${NC} $*"; }
 step() { echo -e "\n${BOLD}[$1/8]${NC} $2"; }
 
-REPO_URL="https://github.com/your-org/aegis-platform.git"
+REPO_URL="https://github.com/RED-RED-RED/project-aegis-shield.git"
 INSTALL_DIR="/opt/argus-node"
 CONFIG_DIR="/etc/argus-node"
 LOG_DIR="/var/log/argus-node"
@@ -34,7 +36,7 @@ LOG_DIR="/var/log/argus-node"
 # ── Argument parsing ─────────────────────────────────────────────────────
 UNATTENDED=false
 OPT_NODE_ID=""; OPT_SERVER_IP=""; OPT_MQTT_PASS=""
-OPT_MQTT_USER="rid"; OPT_WIFI_IFACE="wlan1"; OPT_SDR=false
+OPT_WIFI_IFACE="wlan1"; OPT_SDR=false
 OPT_REPO=""; OPT_GPS_MODE="usb"
 
 while [[ $# -gt 0 ]]; do
@@ -43,7 +45,6 @@ while [[ $# -gt 0 ]]; do
     --node-id)       OPT_NODE_ID="$2";    shift;;
     --server-ip)     OPT_SERVER_IP="$2";  shift;;
     --mqtt-password) OPT_MQTT_PASS="$2";  shift;;
-    --mqtt-user)     OPT_MQTT_USER="$2";  shift;;
     --wifi-iface)    OPT_WIFI_IFACE="$2"; shift;;
     --enable-sdr)    OPT_SDR=true;;
     --repo)          OPT_REPO="$2";       shift;;
@@ -72,17 +73,32 @@ if [[ "$UNATTENDED" == false ]]; then
   echo "  Press Enter to accept defaults shown in [brackets]."
   echo ""
 
-  read -rp "  Node ID [${DEFAULT_ID}]: " NODE_ID
+  echo "  Node ID"
+  echo "  A unique name for this sensor node — used in MQTT topics"
+  echo "  and displayed in the AEGIS Shield dashboard."
+  read -rp "    ID [${DEFAULT_ID}]: " NODE_ID
   NODE_ID="${NODE_ID:-$DEFAULT_ID}"
+  echo ""
 
-  read -rp "  AEGIS Server IP: " SERVER_IP
+  echo "  AEGIS Server IP"
+  echo "  The IP address of the machine running the AEGIS Server stack."
+  echo "  Check DEPLOYMENT.md on the server if you are unsure."
+  read -rp "    Server IP: " SERVER_IP
   [[ -n "$SERVER_IP" ]] || fail "Server IP is required"
+  echo ""
 
-  read -rp "  MQTT username [rid]: " MQTT_USER
-  MQTT_USER="${MQTT_USER:-rid}"
-
-  read -rsp "  MQTT password: " MQTT_PASS; echo
-  [[ -n "$MQTT_PASS" ]] || fail "MQTT password is required"
+  echo "  MQTT password"
+  echo "  The MQTT broker password set during AEGIS Server deployment."
+  echo "  Find it in DEPLOYMENT.md or aegis-server/docker/.env on the server."
+  while true; do
+    read -rsp "    Password: " MQTT_PASS; echo
+    [[ -n "$MQTT_PASS" ]] || { echo -e "${RED}  Password is required.${NC}"; continue; }
+    read -rsp "    Confirm password: " MQTT_PASS_CONFIRM; echo
+    [[ "$MQTT_PASS" == "$MQTT_PASS_CONFIRM" ]] && break
+    echo -e "${RED}  Passwords do not match. Try again.${NC}"
+  done
+  MQTT_USER="rid"
+  echo ""
 
   read -rp "  Wi-Fi adapter interface [wlan1]: " WIFI_IFACE
   WIFI_IFACE="${WIFI_IFACE:-wlan1}"
@@ -95,7 +111,7 @@ if [[ "$UNATTENDED" == false ]]; then
 else
   NODE_ID="${OPT_NODE_ID:-$(hostname | tr '[:lower:]' '[:upper:]')}"
   SERVER_IP="$OPT_SERVER_IP"
-  MQTT_USER="$OPT_MQTT_USER"
+  MQTT_USER="rid"
   MQTT_PASS="$OPT_MQTT_PASS"
   WIFI_IFACE="$OPT_WIFI_IFACE"
   ENABLE_SDR="$OPT_SDR"
