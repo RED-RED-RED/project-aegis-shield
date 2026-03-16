@@ -79,11 +79,31 @@ if [[ "$UNATTENDED" == false ]]; then
   SUGGESTED_DB=$(gen_password)
   SUGGESTED_MQTT=$(gen_password)
 
-  read -rsp "  Database password [${SUGGESTED_DB:0:8}...]: " DB_PASS; echo
-  DB_PASS="${DB_PASS:-$SUGGESTED_DB}"
+  echo "  Database password"
+  echo "  Used by TimescaleDB and the AEGIS Server to authenticate"
+  echo "  internal database connections. Never exposed externally."
+  while true; do
+    read -rsp "    Password [${SUGGESTED_DB:0:8}...]: " DB_PASS; echo
+    DB_PASS="${DB_PASS:-$SUGGESTED_DB}"
+    read -rsp "    Confirm password: " DB_PASS_CONFIRM; echo
+    DB_PASS_CONFIRM="${DB_PASS_CONFIRM:-$SUGGESTED_DB}"
+    [[ "$DB_PASS" == "$DB_PASS_CONFIRM" ]] && break
+    echo -e "${RED}  Passwords do not match. Try again.${NC}"
+  done
+  echo ""
 
-  read -rsp "  MQTT password [${SUGGESTED_MQTT:0:8}...]: " MQTT_PASS; echo
-  MQTT_PASS="${MQTT_PASS:-$SUGGESTED_MQTT}"
+  echo "  MQTT password"
+  echo "  Used by ARGUS sensor nodes to publish detections to the"
+  echo "  Mosquitto broker. You will need this when deploying nodes."
+  while true; do
+    read -rsp "    Password [${SUGGESTED_MQTT:0:8}...]: " MQTT_PASS; echo
+    MQTT_PASS="${MQTT_PASS:-$SUGGESTED_MQTT}"
+    read -rsp "    Confirm password: " MQTT_PASS_CONFIRM; echo
+    MQTT_PASS_CONFIRM="${MQTT_PASS_CONFIRM:-$SUGGESTED_MQTT}"
+    [[ "$MQTT_PASS" == "$MQTT_PASS_CONFIRM" ]] && break
+    echo -e "${RED}  Passwords do not match. Try again.${NC}"
+  done
+  echo ""
 
   read -rp "  Server bind host [0.0.0.0]: " BIND_HOST
   BIND_HOST="${BIND_HOST:-0.0.0.0}"

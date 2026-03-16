@@ -48,8 +48,9 @@ services:
     ports:
       - "1883:1883"
     healthcheck:
-      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "health", "-m", "ok"]
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-u", "${MQTT_USER:-rid}", "-P", "${MQTT_PASSWORD:-changeme}", "-t", "health", "-m", "ok"]
       interval: 10s
+      timeout: 5s
       retries: 5
 
   # ---- FastAPI backend ----
