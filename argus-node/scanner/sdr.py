@@ -35,13 +35,18 @@ except ImportError:
     log.warning("pyrtlsdr or numpy not installed — SDR scanner disabled")
 
 
-# 2.4 GHz sub-bands to sweep (DJI OcuSync, video downlinks, etc.)
+# Frequency bands reachable by R820T-based RTL-SDR dongles (max ~1,766 MHz).
+# 2.4 GHz is above the R820T ceiling — use ISM / hobby RC bands instead.
+# These correlate with unlicensed drone control links and FPV video downlinks.
 SWEEP_FREQS = [
-    2_412_000_000,   # Wi-Fi ch1
-    2_437_000_000,   # Wi-Fi ch6
-    2_462_000_000,   # Wi-Fi ch11
-    2_440_000_000,   # DJI OcuSync center
+    433_920_000,     # 433 MHz ISM — hobby RC, some DJI remotes
+    868_000_000,     # 868 MHz — EU drone control links
+    915_000_000,     # 915 MHz — US ISM drone control links
+    1_200_000_000,   # 1.2 GHz — FPV analog video downlinks
 ]
+
+# R820T hardware ceiling — avoid segfaults from out-of-range tune attempts
+R820T_MAX_HZ = 1_766_000_000
 
 SAMPLE_RATE    = 2_400_000   # 2.4 MSPS — covers 2.4 MHz per tune
 NUM_SAMPLES    = 256_000     # ~107 ms per capture
@@ -96,6 +101,9 @@ class SDRScanner:
             log.info("SDR scanner stopped.")
 
     def _scan_freq(self, sdr, freq: int):
+        if freq > R820T_MAX_HZ:
+            log.warning(f"Skipping {freq/1e6:.1f} MHz — above R820T hardware ceiling ({R820T_MAX_HZ/1e6:.0f} MHz)")
+            return
         try:
             sdr.center_freq = freq
             samples = sdr.read_samples(NUM_SAMPLES)
