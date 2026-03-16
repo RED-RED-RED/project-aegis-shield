@@ -185,7 +185,8 @@ fi
 step 3 "Fetching AEGIS platform code"
 if [[ -d "$INSTALL_DIR/.git" ]]; then
   info "Updating existing install at $INSTALL_DIR"
-  git -C "$INSTALL_DIR" pull --ff-only
+  git -C "$INSTALL_DIR" fetch origin
+  git -C "$INSTALL_DIR" reset --hard origin/main
 else
   info "Cloning from $REPO_URL"
   git clone "$REPO_URL" "$INSTALL_DIR" --depth 1
