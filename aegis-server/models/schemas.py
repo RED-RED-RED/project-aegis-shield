@@ -26,6 +26,7 @@ class NodeHeartbeat(BaseModel):
     ts: float
     gps: dict
     system: dict
+    radios:         list[str] = []
     jamming_state:  Optional[str] = None   # GPS jamming indicator from UBX-NAV-STATUS
     spoofing_state: Optional[str] = None   # GPS spoofing indicator from UBX-NAV-STATUS
 
@@ -45,6 +46,7 @@ class NodeOut(BaseModel):
     disk_pct: Optional[float] = None
     temp_c: Optional[float] = None
     uptime_s: Optional[int] = None
+    radios: list[str] = []
 
     class Config:
         from_attributes = True

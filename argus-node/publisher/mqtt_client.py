@@ -131,7 +131,7 @@ class MQTTPublisher:
         topic = f"argus/{node_id}/detection"
         self._enqueue(topic, payload, qos=1)
 
-    def send_heartbeat(self, gps):
+    def send_heartbeat(self, gps, radios: list[str] | None = None):
         """Publish node health metrics. Called every N seconds by the main loop."""
         import psutil
         payload = {
@@ -152,6 +152,7 @@ class MQTTPublisher:
                 "temp_c":   _read_cpu_temp(),
                 "uptime_s": int(time.time() - psutil.boot_time()),
             },
+            "radios": radios or [],
         }
         topic = f"argus/{self.node_id}/heartbeat"
         self._enqueue(topic, payload, qos=0)

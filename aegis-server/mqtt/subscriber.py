@@ -253,9 +253,9 @@ class MQTTSubscriber:
                     node_id, status, last_seen,
                     lat, lon, alt, gps_fix, satellites,
                     cpu_pct, mem_pct, disk_pct, temp_c, uptime_s,
-                    jamming_state, spoofing_state, survey_complete
+                    radios, jamming_state, spoofing_state, survey_complete
                 ) VALUES ($1, 'online', to_timestamp($2), $3, $4, $5, $6, $7,
-                          $8, $9, $10, $11, $12, $13, $14, $15)
+                          $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 ON CONFLICT (node_id) DO UPDATE SET
                     status          = 'online',
                     last_seen       = to_timestamp($2),
@@ -269,9 +269,10 @@ class MQTTSubscriber:
                     disk_pct        = $10,
                     temp_c          = $11,
                     uptime_s        = $12,
-                    jamming_state   = $13,
-                    spoofing_state  = $14,
-                    survey_complete = $15
+                    radios          = $13,
+                    jamming_state   = $14,
+                    spoofing_state  = $15,
+                    survey_complete = $16
             """,
                 hb.node_id, hb.ts,
                 hb.gps.get("lat", 0.0),
@@ -284,6 +285,7 @@ class MQTTSubscriber:
                 hb.system.get("disk_pct"),
                 hb.system.get("temp_c"),
                 hb.system.get("uptime_s"),
+                hb.radios or [],
                 hb.jamming_state,
                 hb.spoofing_state,
                 hb.gps.get("survey_complete", False),

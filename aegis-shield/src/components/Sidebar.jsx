@@ -169,12 +169,6 @@ const css = `
 .sb-health-val   { width: 32px; text-align: right; color: var(--text-dim); }
 `
 
-const DEMO_RADIOS = {
-  'ARGUS-01': ['wifi','bt','sdr'],
-  'ARGUS-02': ['wifi','bt'],
-  'ARGUS-03': ['wifi','bt','sdr'],
-  'ARGUS-04': ['bt','sdr'],
-}
 
 export default function Sidebar() {
   const nodes        = useStore(selectAllNodes)
@@ -227,7 +221,7 @@ export default function Sidebar() {
             const st = node.status === 'online' ? 'nd-online'
                      : node.status === 'warn'   ? 'nd-warn'
                                                 : 'nd-offline'
-            const radios = DEMO_RADIOS[node.node_id] || ['wifi','bt']
+            const radios = node.radios?.length ? node.radios : ['wifi','bt']
             const detections = drones.filter(d =>
               d.detecting_nodes?.includes(node.node_id)).length
 

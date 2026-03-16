@@ -136,10 +136,16 @@ def main():
         t.start()
     log.info(f"All {len(threads)} scanner(s) running. Press Ctrl+C to stop.")
 
+    # Build radios list based on enabled scanners
+    active_radios = []
+    if cfg.wifi_enabled: active_radios.append("wifi")
+    if cfg.bt_enabled:   active_radios.append("bt")
+    if cfg.sdr_enabled:  active_radios.append("sdr")
+
     # ---- Heartbeat loop ----
     try:
         while not _stop_event.is_set():
-            publisher.send_heartbeat(gps)
+            publisher.send_heartbeat(gps, radios=active_radios)
             time.sleep(cfg.heartbeat_interval_s)
     finally:
         log.info("Stopping…")
