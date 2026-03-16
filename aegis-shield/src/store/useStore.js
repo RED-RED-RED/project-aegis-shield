@@ -57,6 +57,10 @@ export const useStore = create((set, get) => ({
                           //              mlat_mismatch_m, spoof_confidence }
   _threatPollTimer: null,
 
+  // ── Server health (polled from /health) ─────────────────────────────────
+  serverHealth:       null,   // { cpu_pct, mem_pct, disk_pct, db, mqtt }
+  _healthPollTimer:   null,
+
   // ── UI ──────────────────────────────────────────────────────────────────
   selectedDroneId: null,
   selectedNodeId:  null,
@@ -72,6 +76,7 @@ export const useStore = create((set, get) => ({
     ws.onopen = () => {
       set({ wsStatus: 'connected', wsRetries: 0, _ws: ws })
       get()._startThreatPoll()
+      get()._startHealthPoll()
     }
     ws.onmessage = (e) => {
       try { get()._handleMessage(JSON.parse(e.data)) }
@@ -80,6 +85,7 @@ export const useStore = create((set, get) => ({
     ws.onclose = () => {
       set({ wsStatus: 'disconnected', _ws: null })
       get()._stopThreatPoll()
+      get()._stopHealthPoll()
       const retries = get().wsRetries
       const delay = Math.min(1000 * Math.pow(2, retries), 30000)
       setTimeout(() => { set({ wsRetries: retries + 1 }); get().connect() }, delay)
@@ -178,6 +184,23 @@ export const useStore = create((set, get) => ({
   _stopThreatPoll() {
     const t = get()._threatPollTimer
     if (t) { clearInterval(t); set({ _threatPollTimer: null }) }
+  },
+
+  // ── Server health polling ────────────────────────────────────────────────
+  _startHealthPoll() {
+    get()._stopHealthPoll()
+    const tick = async () => {
+      try {
+        const res = await fetch('/health')
+        if (res.ok) set({ serverHealth: await res.json() })
+      } catch {}
+    }
+    tick()
+    set({ _healthPollTimer: setInterval(tick, 10000) })
+  },
+  _stopHealthPoll() {
+    const t = get()._healthPollTimer
+    if (t) { clearInterval(t); set({ _healthPollTimer: null }) }
   },
 
   // ── Alert actions ────────────────────────────────────────────────────────
