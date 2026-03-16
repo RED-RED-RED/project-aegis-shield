@@ -206,9 +206,41 @@ async def _create_schema(pool: Pool):
                 -- Compliance
                 has_valid_rid   BOOLEAN DEFAULT FALSE,
                 detection_count INT DEFAULT 1,
-                detecting_nodes TEXT[]
+                detecting_nodes TEXT[],
+
+                -- Analysis results (written by pipeline.py)
+                threat_score        REAL,
+                threat_level        TEXT,
+                threat_factors      TEXT,
+                mlat_lat            DOUBLE PRECISION,
+                mlat_lon            DOUBLE PRECISION,
+                mlat_radius_m       REAL,
+                mlat_mismatch_m     REAL,
+                spoof_confidence    REAL,
+                mlat_node_count     INT,
+                analysis_updated_at TIMESTAMPTZ
             );
         """)
+
+        # Idempotently add analysis columns to existing deployments
+        for col, dtype in [
+            ("threat_score",        "REAL"),
+            ("threat_level",        "TEXT"),
+            ("threat_factors",      "TEXT"),
+            ("mlat_lat",            "DOUBLE PRECISION"),
+            ("mlat_lon",            "DOUBLE PRECISION"),
+            ("mlat_radius_m",       "REAL"),
+            ("mlat_mismatch_m",     "REAL"),
+            ("spoof_confidence",    "REAL"),
+            ("mlat_node_count",     "INT"),
+            ("analysis_updated_at", "TIMESTAMPTZ"),
+        ]:
+            try:
+                await conn.execute(
+                    f"ALTER TABLE drone_tracks ADD COLUMN IF NOT EXISTS {col} {dtype};"
+                )
+            except Exception:
+                pass
 
         # Index for WebSocket live-state query (last_seen filtered on every push)
         await conn.execute("""
