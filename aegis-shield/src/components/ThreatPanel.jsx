@@ -3,6 +3,7 @@
 // score, with animated score gauge, factor breakdown bars, and MLAT detail.
 
 import { useState } from 'react'
+import { formatDistanceToNow } from 'date-fns'
 import { useStore, selectActiveDrones, FACTOR_LABELS, threatColor, threatBg, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
 
 const css = `
@@ -286,16 +287,19 @@ export default function ThreatPanel() {
             )}
             {drones.map(d => {
               const score = d.threat_score
+              const stale = d.last_seen && (Date.now() - new Date(d.last_seen).getTime()) > 5 * 60 * 1000
               const flags = []
               if (!d.has_valid_rid)               flags.push({ label:'NO RID',  cls:'flag-danger' })
               if (d.mlat_mismatch_m > 250)         flags.push({ label:`Δ${fmtDist(d.mlat_mismatch_m, imperial)}`, cls:'flag-danger' })
               if ((d.spoof_confidence??0) > 0.6)  flags.push({ label:'SPOOF?',  cls:'flag-danger' })
               if ((d.speed_h??0) > 25)             flags.push({ label:'SPEED',   cls:'flag-amber' })
               if (d.mlat_lat != null)              flags.push({ label:'MLAT',    cls:'flag-ice' })
+              if (stale)                           flags.push({ label:'STALE',   cls:'flag-ice' })
 
               return (
                 <div key={d.drone_id}
                   className={`tdr ${(selId??drone?.drone_id)===d.drone_id ? 'selected':''}`}
+                  style={stale ? {opacity:0.5} : undefined}
                   onClick={() => { setSel(d.drone_id); selectDrone(d.drone_id) }}>
                   <Gauge score={score} size={42} strokeWidth={4}/>
                   <div className="tdr-info">
