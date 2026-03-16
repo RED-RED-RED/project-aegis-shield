@@ -78,7 +78,7 @@ async def _build_live_state() -> dict:
     """Query current state from DB for the live AEGIS Shield snapshot."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Active drones (seen in last 5 minutes)
+        # Drones seen in last 24 hours (includes stale for history)
         drone_rows = await conn.fetch("""
             SELECT drone_id, first_seen, last_seen,
                    last_node_id, last_transport, last_rssi,
@@ -88,7 +88,7 @@ async def _build_live_state() -> dict:
                    operator_lat, operator_lon, description,
                    has_valid_rid, detection_count, detecting_nodes
             FROM drone_tracks
-            WHERE last_seen > NOW() - INTERVAL '5 minutes'
+            WHERE last_seen > NOW() - INTERVAL '24 hours'
             ORDER BY last_seen DESC
         """)
 
