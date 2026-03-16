@@ -135,7 +135,8 @@ echo ""
 step 1 "System packages"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  python3 python3-pip python3-venv git curl wget \
+  python3 python3-pip python3-venv python3-dev gcc \
+  git curl wget \
   aircrack-ng iw wireless-tools rfkill \
   bluez bluez-tools \
   gpsd gpsd-clients \
