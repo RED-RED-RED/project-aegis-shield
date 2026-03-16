@@ -180,6 +180,17 @@ export const useStore = create((set, get) => ({
     if (t) { clearInterval(t); set({ _threatPollTimer: null }) }
   },
 
+  // ── Alert actions ────────────────────────────────────────────────────────
+  async acknowledgeAlert(id) {
+    // Optimistic update
+    set(s => ({ alerts: s.alerts.map(a => a.id === id ? { ...a, acknowledged: true } : a) }))
+    try { await fetch(`/api/alerts/${id}/acknowledge`, { method: 'POST' }) } catch {}
+  },
+  async acknowledgeAll() {
+    set(s => ({ alerts: s.alerts.map(a => ({ ...a, acknowledged: true })) }))
+    try { await fetch('/api/alerts/acknowledge-all', { method: 'POST' }) } catch {}
+  },
+
   // ── UI actions ───────────────────────────────────────────────────────────
   selectDrone(id)       { set({ selectedDroneId: id, selectedNodeId: null }) },
   selectNode(id)        { set({ selectedNodeId: id, selectedDroneId: null }) },
