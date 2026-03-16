@@ -12,9 +12,9 @@ psutil==5.9.8             # System health metrics
 scapy==2.5.0              # Packet capture and 802.11 frame parsing
 
 # Bluetooth scanning
-bleak==0.21.1             # Cross-platform BLE (async)
+bleak==0.22.3             # Cross-platform BLE (async) — 0.22.x adds Python 3.13 support
 
 # SDR — practical on Pi 4 with USB 3.0 (comment out if not using RTL-SDR)
 pyrtlsdr==0.3.0
-numpy==1.26.4
-scipy==1.12.0
+numpy==2.2.3              # 2.x required for Python 3.13
+scipy==1.15.2             # 1.13+ required for Python 3.13
