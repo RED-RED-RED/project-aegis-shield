@@ -14,6 +14,9 @@ BT_HCI="hci0"
 
 echo "[setup] Configuring Wi-Fi monitor mode on $WIFI_IFACE → $MON_IFACE"
 
+# Unblock Wi-Fi in case rfkill is blocking the adapter
+rfkill unblock wifi 2>/dev/null || true
+
 # Kill anything that might interfere (NetworkManager, wpa_supplicant)
 # Only kill processes tied to our scan interface, not the system Wi-Fi
 airmon-ng check kill 2>/dev/null || true
@@ -23,7 +26,8 @@ if ip link show "$MON_IFACE" &>/dev/null; then
     echo "[setup] Monitor interface $MON_IFACE already exists — skipping"
 else
     ip link set "$WIFI_IFACE" down 2>/dev/null || true
-    iw phy "$WIFI_PHY" interface add "$MON_IFACE" type monitor
+    iw dev "$WIFI_IFACE" set type monitor
+    ip link set "$WIFI_IFACE" name "$MON_IFACE"
     ip link set "$MON_IFACE" up
     echo "[setup] Monitor interface $MON_IFACE created"
 fi
