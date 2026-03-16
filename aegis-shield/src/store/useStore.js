@@ -77,6 +77,7 @@ export const useStore = create((set, get) => ({
       set({ wsStatus: 'connected', wsRetries: 0, _ws: ws })
       get()._startThreatPoll()
       get()._startHealthPoll()
+      get()._seedPacketFeed()
     }
     ws.onmessage = (e) => {
       try { get()._handleMessage(JSON.parse(e.data)) }
@@ -201,6 +202,28 @@ export const useStore = create((set, get) => ({
   _stopHealthPoll() {
     const t = get()._healthPollTimer
     if (t) { clearInterval(t); set({ _healthPollTimer: null }) }
+  },
+
+  // ── Seed packet feed from DB on connect ─────────────────────────────────
+  async _seedPacketFeed() {
+    try {
+      const res = await fetch('/api/detections?limit=150')
+      if (!res.ok) return
+      const rows = await res.json()
+      const packets = rows.map(r => ({
+        ts:        new Date(r.detected_at).getTime() / 1000,
+        node_id:   r.node_id,
+        transport: r.transport,
+        drone_id:  r.drone_id,
+        rssi:      r.rssi,
+        alt_baro:  r.alt_baro,
+        speed_h:   r.speed_h,
+        status:    r.status,
+      }))
+      set(s => ({
+        recentPackets: [...packets, ...s.recentPackets].slice(0, 150)
+      }))
+    } catch {}
   },
 
   // ── Alert actions ────────────────────────────────────────────────────────
