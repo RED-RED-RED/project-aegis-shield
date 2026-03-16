@@ -150,7 +150,7 @@ if command -v mosquitto_passwd &>/dev/null; then
 else
   # Generate it via Docker if mosquitto tools not installed locally
   docker run --rm eclipse-mosquitto:2 \
-    mosquitto_passwd -c -b /dev/stdout rid "$MQTT_PASS" \
+    sh -c "mosquitto_passwd -c -b /tmp/mqpasswd rid '$MQTT_PASS' && cat /tmp/mqpasswd" \
     > "$DOCKER_DIR/mosquitto_passwd"
 fi
 [[ -s "$DOCKER_DIR/mosquitto_passwd" ]] || fail "Mosquitto password file is empty or missing"
