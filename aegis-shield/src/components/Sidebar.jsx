@@ -1,5 +1,5 @@
 // src/components/Sidebar.jsx
-import { useStore, selectAllNodes, selectActiveDrones, selectOpenAlerts } from '../store/useStore'
+import { useStore, selectAllNodes, selectActiveDrones, selectOpenAlerts, useUnits } from '../store/useStore'
 
 const css = `
 .sidebar {
@@ -179,6 +179,7 @@ export default function Sidebar() {
   const setPanel     = useStore(s => s.setPanel)
   const selectNode   = useStore(s => s.selectNode)
   const serverHealth = useStore(s => s.serverHealth)
+  const imperial     = useUnits()
 
   const highAlerts = alerts.filter(a => a.level === 'high').length
 
@@ -311,7 +312,7 @@ export default function Sidebar() {
             ))}
             {selected.temp_c != null && (
               <div style={{color:'var(--muted)',marginTop:2}}>
-                TEMP {selected.temp_c}°C &nbsp; UP {fmtUptime(selected.uptime_s)}
+                TEMP {imperial ? `${(selected.temp_c * 9/5 + 32).toFixed(1)}°F` : `${selected.temp_c.toFixed(1)}°C`} &nbsp; UP {fmtUptime(selected.uptime_s)}
               </div>
             )}
           </div>
