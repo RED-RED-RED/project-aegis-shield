@@ -53,8 +53,8 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 
 ```bash
 # 1. Clone
-git clone https://github.com/your-org/aegis-platform
-cd aegis-platform
+git clone https://github.com/RED-RED-RED/project-aegis-shield
+cd project-aegis-shield
 
 # 2. Deploy AEGIS Server (Docker required, Ubuntu/Debian/Pi OS 64-bit)
 sudo bash scripts/deploy-aegis-server.sh
