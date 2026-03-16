@@ -44,6 +44,7 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 - [API Reference](#api-reference)
 - [Threat Scoring](#threat-scoring)
 - [MLAT / Trilateration](#mlat--trilateration)
+- [Troubleshooting](#troubleshooting)
 - [Development](#development)
 - [Test Suite](#test-suite)
 
@@ -101,7 +102,7 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 | Topic | Direction | Content |
 |---|---|---|
 | `argus/<id>/detection` | node → server | Full RID frame, RSSI, node GPS |
-| `argus/<id>/heartbeat` | node → server | CPU, memory, GPS fix, jamming/spoofing state, survey status (10s) |
+| `argus/<id>/heartbeat` | node → server | CPU, memory, GPS fix, active radios list, jamming/spoofing state, survey status (10s) |
 | `argus/<id>/status` | node → server | `online`/`offline` (LWT, retained) |
 | `argus/<id>/rf_event` | node → server | RTL-SDR RF burst (optional) |
 
@@ -143,6 +144,8 @@ Any Linux machine with 2GB+ RAM and Docker. Raspberry Pi 4 works well; an old NU
 **u-blox NEO-M9N (USB, recommended)** — plug into any Pi USB port. The driver creates `/dev/ttyACM0`; the deploy script adds a udev rule so it also appears at the stable symlink `/dev/ttyGPS`. No UART configuration or serial console changes are needed. The GPS daemon auto-detects the port at startup, initialises the receiver via UBX binary protocol, and runs a **survey-in** (10 min minimum / 3 m accuracy target) to pin the node's precise position. Once the survey completes, `survey_complete` is set in the nodes table and that node receives a **3× weight multiplier** in the WLS trilateration solver. The NEO-M9N also reports hardware **jamming** and **spoofing** state via `UBX-NAV-STATUS`; critical/warning states trigger a `gps_jamming` alert on the server.
 
 **u-blox NEO-M8N (UART, legacy)** — connect to Pi UART (`/dev/ttyAMA0`). Pass `--gps-mode uart` to the deploy script; it enables the UART in `/boot/firmware/config.txt` and disables the serial console. **A reboot is required** after this setup. The NEO-M8N does not support UBX survey-in or hardware jamming/spoofing detection.
+
+**RTL-SDR R820T frequency limitation** — the R820T tuner (used in RTL-SDR v3 and most cheap dongles) has a hardware ceiling of ~1,766 MHz. It cannot scan 2.4 GHz. The ARGUS SDR scanner targets 433/868/915 MHz and 1.2 GHz instead. If you need 2.4 GHz coverage, a HackRF or ADALM-Pluto is required (not currently supported).
 
 ---
 
@@ -206,7 +209,7 @@ Once set, every request must include the key as a header:
 X-Api-Key: your-secret-key-here
 ```
 
-The `/health` endpoint is always unauthenticated.
+The `/health` endpoint is always unauthenticated. It returns server CPU/memory/disk usage, database connectivity status, MQTT reachability (based on last node heartbeat), and online/total node counts — used by the AEGIS Shield Server Health panel.
 
 If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
 
@@ -333,16 +336,26 @@ Supports GPX (DJI Fly, Litchi, Mission Planner), DJI SRT subtitle files, and CSV
 
 ## AEGIS Shield
 
-AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a full state snapshot every 500ms. Threat data is polled from the REST API every 3 seconds.
+AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a full state snapshot every 500ms. Threat data is polled from the REST API every 3 seconds. Units default to **imperial** (toggle in the top-right corner).
 
 ### Views
 
 | View | Description |
 |---|---|
 | **Live Map** | Leaflet map with threat-coloured drone markers, MLAT circles, confidence radii, mismatch lines, node pulse rings, and track trails |
-| **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, and spoof confidence meter |
-| **Packet Feed** | Live scrolling MQTT detection stream with timestamp, node, radio, and telemetry columns |
+| **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, and spoof confidence meter. Shows all drones seen in the last 24 hours — stale entries (>5 min) are dimmed and tagged STALE. |
+| **Packet Feed** | Detection stream pre-seeded with the last 150 detections from the database on page load, then updated live via WebSocket |
 | **Architecture** | System architecture reference diagram |
+
+### Sidebar
+
+- **ARGUS Nodes** — lists each node with status dot, CPU %, GPS fix, and active radio badges (WiFi / BT5 / SDR). Badges reflect the actual scanners running on the node.
+- **Node Health** — CPU/MEM/DISK mini-bars and temperature (imperial or metric) for the selected node.
+- **Server Health** — CPU/MEM/DISK bars and DB/MQTT status dots for the AEGIS Server, polled every 10 seconds from `/health`.
+
+### Active Alerts
+
+Alerts can be dismissed individually (× button, visible on hover) or all at once with **Dismiss All**. Dismissal calls `POST /api/alerts/{id}/acknowledge` and removes the alert from the feed immediately.
 
 ### Map overlays
 
@@ -466,6 +479,34 @@ AEGIS uses weighted least-squares trilateration on RSSI measurements from ≥ 3 
 **Survey-in weight multiplier:** Nodes that have completed a GPS survey-in (`survey_complete = true`) receive a **3× weight** in the WLS solver. This reflects that their position is precisely known (sub-3m accuracy) rather than estimated from a live GPS fix. Deploy nodes with NEO-M9N receivers and allow the 10-minute survey-in to complete for best MLAT accuracy.
 
 The calibration utility fits `n` and `RSSI_REF` independently per node from a calibration flight, then writes `aegis-server/analysis/calibration.yaml` which the trilateration engine loads at startup.
+
+---
+
+## Troubleshooting
+
+### SDR scanner exits immediately (`SDR libraries not available`)
+
+`pyrtlsdr` depends on `pkg_resources` which is not included in the default Python 3.13 venv. Fix:
+
+```bash
+sudo /opt/argus-node/venv/bin/pip install 'setuptools==69.5.1' --force-reinstall --no-binary :all:
+sudo systemctl restart argus-node
+```
+
+### `setup_interfaces.sh: Permission denied` after git pull
+
+`git reset --hard` strips the execute bit from `setup_interfaces.sh`. Fix:
+
+```bash
+sudo chmod +x /opt/argus-node/argus-node/systemd/setup_interfaces.sh
+sudo systemctl restart argus-node
+```
+
+To prevent recurrence, the execute bit is tracked in git (`git update-index --chmod=+x`). If it reappears, re-run the `git update-index` command on the dev machine and push.
+
+### SDR segfaults / `[R82XX] PLL not locked`
+
+The R820T tuner cannot tune above ~1,766 MHz. If you have modified `SWEEP_FREQS` in `sdr.py` to include 2.4 GHz frequencies, the device will segfault. Keep all frequencies below `R820T_MAX_HZ = 1_766_000_000`.
 
 ---
 
