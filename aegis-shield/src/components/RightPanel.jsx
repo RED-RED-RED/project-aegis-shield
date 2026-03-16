@@ -1,5 +1,5 @@
 // src/components/RightPanel.jsx
-import { useStore, selectActiveDrones, selectOpenAlerts, threatColor, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
+import { useStore, selectActiveDrones, selectOpenAlerts, threatColor, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist, selectHighAlerts } from '../store/useStore'
 import { formatDistanceToNow } from 'date-fns'
 
 const css = `
@@ -183,6 +183,35 @@ const css = `
   color: var(--text-dim);
   line-height: 1.4;
 }
+.alert-dismiss {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+}
+.alert-row:hover .alert-dismiss { opacity: 1; }
+.alert-dismiss:hover { color: var(--danger); }
+.dismiss-all-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-family: var(--cond);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.dismiss-all-btn:hover { color: var(--text); border-color: var(--text-dim); }
 .empty-msg {
   padding: 16px 12px;
   font-family: var(--mono);
@@ -193,10 +222,13 @@ const css = `
 `
 
 export default function RightPanel() {
-  const drones     = useStore(selectActiveDrones)
-  const alerts     = useStore(selectOpenAlerts)
-  const selected   = useStore(s => s.selectedDroneId)
-  const selectDrone = useStore(s => s.selectDrone)
+  const drones          = useStore(selectActiveDrones)
+  const alerts          = useStore(selectOpenAlerts)
+  const selected        = useStore(s => s.selectedDroneId)
+  const selectDrone     = useStore(s => s.selectDrone)
+  const acknowledgeAlert = useStore(s => s.acknowledgeAlert)
+  const acknowledgeAll  = useStore(s => s.acknowledgeAll)
+  const highCount       = useStore(s => selectHighAlerts(s).length)
 
   const selectedDrone = drones.find(d => d.drone_id === selected)
   const noRidCount = drones.filter(d => !d.has_valid_rid).length
@@ -238,14 +270,21 @@ export default function RightPanel() {
         <div className="rp-section flex1">
           <div className="rp-title">
             Active Alerts
-            <span className={`rp-count ${alerts.filter(a=>a.level==='high').length > 0 ? 'rc-danger' : 'rc-green'}`}>
-              {alerts.filter(a=>a.level==='high').length} HIGH
-            </span>
+            <div style={{display:'flex',alignItems:'center',gap:6}}>
+              {alerts.length > 0 && (
+                <button className="dismiss-all-btn" onClick={acknowledgeAll}>
+                  Dismiss All
+                </button>
+              )}
+              <span className={`rp-count ${highCount > 0 ? 'rc-danger' : 'rc-green'}`}>
+                {highCount} HIGH
+              </span>
+            </div>
           </div>
           <div className="rp-scroll">
             {alerts.length === 0 && <div className="empty-msg">No active alerts</div>}
             {alerts.slice(0, 50).map(alert => (
-              <AlertRow key={alert.id} alert={alert} />
+              <AlertRow key={alert.id} alert={alert} onDismiss={() => acknowledgeAlert(alert.id)} />
             ))}
           </div>
         </div>
@@ -345,7 +384,7 @@ function DroneDetail({ drone }) {
   )
 }
 
-function AlertRow({ alert }) {
+function AlertRow({ alert, onDismiss }) {
   const levelClass = alert.level === 'high' ? 'ar-high' : alert.level === 'medium' ? 'ar-medium' : 'ar-low'
   let timeStr = ''
   try {
@@ -356,7 +395,14 @@ function AlertRow({ alert }) {
     <div className={`alert-row ${levelClass}`}>
       <div className="alert-header">
         <div className="alert-title">{alert.title}</div>
-        <div className="alert-time">{timeStr}</div>
+        <div style={{display:'flex',alignItems:'center',gap:4,flexShrink:0}}>
+          <div className="alert-time">{timeStr}</div>
+          <button
+            className="alert-dismiss"
+            onClick={e => { e.stopPropagation(); onDismiss() }}
+            title="Dismiss"
+          >×</button>
+        </div>
       </div>
       {alert.description && (
         <div className="alert-desc">{alert.description.slice(0, 100)}</div>
