@@ -155,11 +155,25 @@ export default function MapView() {
 
   useEffect(() => {
     if (leafletRef.current) return
-    const map = L.map(mapRef.current, { center:[39.5,-98.35], zoom:5 })
+
+    const saved   = JSON.parse(localStorage.getItem('aegis_map_view') || 'null')
+    const center  = saved?.center  ?? [39.5, -98.35]
+    const zoom    = saved?.zoom    ?? 5
+
+    const map = L.map(mapRef.current, { center, zoom })
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(map)
+
+    map.on('moveend', () => {
+      const c = map.getCenter()
+      localStorage.setItem('aegis_map_view', JSON.stringify({
+        center: [c.lat, c.lng],
+        zoom:   map.getZoom(),
+      }))
+    })
+
     leafletRef.current = map
     return () => { map.remove(); leafletRef.current = null }
   }, [])
