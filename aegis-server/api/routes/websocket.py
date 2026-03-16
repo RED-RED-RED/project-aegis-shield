@@ -96,7 +96,7 @@ async def _build_live_state() -> dict:
         node_rows = await conn.fetch("""
             SELECT node_id, site_name, status, last_seen,
                    lat, lon, alt, gps_fix, satellites,
-                   cpu_pct, mem_pct, disk_pct, temp_c, uptime_s
+                   cpu_pct, mem_pct, disk_pct, temp_c, uptime_s, radios
             FROM nodes
             ORDER BY node_id
         """)
