@@ -100,4 +100,40 @@ app.include_router(websocket.router, tags=["websocket"], dependencies=_auth)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    import psutil
+    from db.database import _pool
+
+    cpu  = psutil.cpu_percent(interval=None)
+    mem  = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+
+    db_ok = False
+    mqtt_ok = False
+    node_count = 0
+    online_count = 0
+    try:
+        if _pool:
+            async with _pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+                db_ok = True
+                # MQTT health: any node heartbeat in last 2 minutes
+                last_hb = await conn.fetchval(
+                    "SELECT MAX(last_seen) FROM nodes WHERE last_seen > NOW() - INTERVAL '2 minutes'"
+                )
+                mqtt_ok = last_hb is not None
+                node_count   = await conn.fetchval("SELECT COUNT(*) FROM nodes")
+                online_count = await conn.fetchval("SELECT COUNT(*) FROM nodes WHERE status = 'online'")
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "cpu_pct":      round(cpu, 1),
+        "mem_pct":      round(mem.percent, 1),
+        "disk_pct":     round(disk.percent, 1),
+        "db":           "ok"   if db_ok   else "error",
+        "mqtt":         "ok"   if mqtt_ok else "warn",
+        "nodes_total":  node_count,
+        "nodes_online": online_count,
+    }
