@@ -154,16 +154,17 @@ class AlertEngine:
                     "lat": drone.lat,
                     "lon": drone.lon,
                 })
+            # Extract quiet_s before releasing the connection — the Algo HTTP call
+            # must not happen while holding a pool connection (up to 3 s timeout).
+            quiet_s = float(row["quiet_seconds"]) if row and row["quiet_seconds"] else 0.0
 
-            # If drone was quiet > 60 s, treat as re-appearance: reset strobe state
-            # so the trigger logic below starts fresh rather than applying cooldown.
-            quiet_s = row["quiet_seconds"] if row and row["quiet_seconds"] else 0
-            if quiet_s > 60 and _algo.get_drone_level(drone.id):
-                await _algo.clear()
-                _algo.clear_drone_state(drone.id)
+        # If drone was quiet > 60 s, reset strobe state so the trigger logic below
+        # starts fresh rather than applying the previous cooldown.
+        if quiet_s > 60 and _algo.get_drone_level(drone.id):
+            await _algo.clear()
+            _algo.clear_drone_state(drone.id)
 
         # Write and broadcast all generated alerts (dedup checked here)
-        emitted: list[dict] = []
         for alert in alerts:
             key = (alert["category"], alert.get("drone_id"), alert.get("node_id"))
             now_ts = time.time()
@@ -171,18 +172,20 @@ class AlertEngine:
                 continue
             self._dedup[key] = now_ts
             await self._emit(alert)
-            emitted.append(alert)
 
         # ---- Algo 8128 strobe logic ----
-        # Determine the highest threat level emitted for this drone in this batch.
+        # Use `alerts` (all rule violations for this detection), NOT the dedup-filtered
+        # subset. The dedup window is for DB/WS spam prevention; the AlgoNotifier has
+        # its own cooldown. Using emitted here would incorrectly clear the strobe while
+        # a drone is still actively violating but its alert is suppressed by dedup.
         _rank = {"low": 0, "medium": 1, "high": 2}
         drone_id = event.drone.id
-        drone_emitted = [a for a in emitted if a.get("drone_id") == drone_id]
-        if drone_emitted:
-            top_level = max(drone_emitted, key=lambda a: _rank.get(a["level"], -1))["level"]
+        drone_alerts = [a for a in alerts if a.get("drone_id") == drone_id]
+        if drone_alerts:
+            top_level = max(drone_alerts, key=lambda a: _rank.get(a["level"], -1))["level"]
             await _algo.trigger(top_level, drone_id)
         elif _algo.get_drone_level(drone_id):
-            # No alerts for this drone this cycle — threat has cleared; stop strobe.
+            # No rule violations for this drone this cycle — threat has cleared.
             await _algo.clear()
             _algo.clear_drone_state(drone_id)
 
