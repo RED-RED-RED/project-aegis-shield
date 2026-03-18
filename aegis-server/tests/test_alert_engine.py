@@ -61,7 +61,7 @@ def build_mock_pool(detection_count=2):
     pool.acquire() must be an async context manager returning a connection.
     """
     mock_conn = AsyncMock()
-    mock_conn.fetchrow = AsyncMock(return_value={"detection_count": detection_count})
+    mock_conn.fetchrow = AsyncMock(return_value={"detection_count": detection_count, "quiet_seconds": None})
     mock_conn.execute = AsyncMock(return_value=None)
 
     @asynccontextmanager
@@ -388,3 +388,118 @@ class TestGPSJammingAlert:
         node_ids = {a["node_id"] for a in emitted if a["category"] == "gps_jamming"}
         assert "ARGUS-03" in node_ids
         assert "ARGUS-04" in node_ids
+
+
+# ------------------------------------------------------------------ #
+# Algo 8128 integration wiring tests
+# ------------------------------------------------------------------ #
+
+class TestAlgoIntegration:
+    """
+    Verify that alert_engine.evaluate() calls AlgoNotifier correctly.
+    _algo is patched so tests are hermetic regardless of environment config.
+    """
+
+    def _get_engine(self, settings):
+        from mqtt.alert_engine import AlertEngine
+        return AlertEngine(settings)
+
+    def _patch_pool(self, pool):
+        async def _get_pool():
+            return pool
+        return patch("mqtt.alert_engine.get_pool", new=_get_pool)
+
+    @pytest.mark.asyncio
+    async def test_high_violation_calls_algo_trigger(self, settings):
+        """A HIGH-level violation (no_rid, airborne, high alt) must call _algo.trigger('high', drone_id)."""
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        # no operator_id + altitude > 30m → no_rid HIGH
+        event = make_event(operator_id="", height_agl=50.0, drone_id="DRONE-X")
+
+        engine._emit = AsyncMock()
+
+        mock_algo = MagicMock()
+        mock_algo.trigger = AsyncMock(return_value=True)
+        mock_algo.clear = AsyncMock(return_value=True)
+        mock_algo.get_drone_level = MagicMock(return_value="")
+        mock_algo.clear_drone_state = MagicMock()
+
+        with self._patch_pool(pool), \
+             patch("mqtt.ws_broadcaster._manager") as m, \
+             patch("mqtt.alert_engine._algo", mock_algo):
+            m.count = 0
+            await engine.evaluate(event)
+
+        mock_algo.trigger.assert_called_once_with("high", "DRONE-X")
+
+    @pytest.mark.asyncio
+    async def test_clean_detection_clears_algo_when_drone_was_active(self, settings):
+        """
+        A detection with no violations for a drone that _algo was tracking
+        must call _algo.clear() and _algo.clear_drone_state(drone_id).
+        """
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        # compliant drone — no violations
+        event = make_event(
+            drone_id="DRONE-Y",
+            operator_id="OP-US-99999",
+            height_agl=50.0,
+            speed_h=5.0,
+        )
+
+        engine._emit = AsyncMock()
+
+        mock_algo = MagicMock()
+        mock_algo.trigger = AsyncMock(return_value=True)
+        mock_algo.clear = AsyncMock(return_value=True)
+        # Simulate: algo was already tracking this drone at "high"
+        mock_algo.get_drone_level = MagicMock(return_value="high")
+        mock_algo.clear_drone_state = MagicMock()
+
+        with self._patch_pool(pool), \
+             patch("mqtt.ws_broadcaster._manager") as m, \
+             patch("mqtt.alert_engine._algo", mock_algo):
+            m.count = 0
+            await engine.evaluate(event)
+
+        mock_algo.clear.assert_called_once()
+        mock_algo.clear_drone_state.assert_called_once_with("DRONE-Y")
+
+    @pytest.mark.asyncio
+    async def test_quiet_drone_clears_algo_on_timeout(self, settings):
+        """
+        When a drone has been quiet > 60s (quiet_seconds > 60) and _algo is
+        tracking it, evaluate() must call _algo.clear() and clear_drone_state().
+        """
+        engine = self._get_engine(settings)
+        pool, mock_conn = build_mock_pool()
+        # Return quiet_seconds = 90 (drone has been quiet for 90s)
+        mock_conn.fetchrow = AsyncMock(
+            return_value={"detection_count": 5, "quiet_seconds": 90.0}
+        )
+        # Compliant drone so no new violations
+        event = make_event(
+            drone_id="DRONE-Z",
+            operator_id="OP-US-77777",
+            height_agl=50.0,
+            speed_h=5.0,
+        )
+
+        engine._emit = AsyncMock()
+
+        mock_algo = MagicMock()
+        mock_algo.trigger = AsyncMock(return_value=True)
+        mock_algo.clear = AsyncMock(return_value=True)
+        mock_algo.get_drone_level = MagicMock(return_value="medium")
+        mock_algo.clear_drone_state = MagicMock()
+
+        with self._patch_pool(pool), \
+             patch("mqtt.ws_broadcaster._manager") as m, \
+             patch("mqtt.alert_engine._algo", mock_algo):
+            m.count = 0
+            await engine.evaluate(event)
+
+        mock_algo.clear.assert_called_once()
+        mock_algo.clear_drone_state.assert_called_once_with("DRONE-Z")
