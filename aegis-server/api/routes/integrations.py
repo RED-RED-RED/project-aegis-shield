@@ -11,7 +11,6 @@ Routes
 
 from fastapi import APIRouter
 
-from integrations.algo_notifier import AlgoNotifier
 from mqtt.alert_engine import _algo
 
 router = APIRouter()
