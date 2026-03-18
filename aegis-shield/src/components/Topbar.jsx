@@ -1,5 +1,5 @@
 // src/components/Topbar.jsx
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useStore, selectActiveDrones, selectOpenAlerts, useUnits, useToggleUnits } from '../store/useStore'
 
 const css = `
@@ -109,7 +109,74 @@ const css = `
   letter-spacing: 1px;
   flex-shrink: 0;
 }
+.tb-algo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 3px 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+.tb-algo:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.tb-algo-icon {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.tb-algo-icon.algo-ok       { background: var(--phosphor); box-shadow: 0 0 5px var(--phosphor); }
+.tb-algo-icon.algo-disabled { background: var(--muted); }
+.tb-algo-icon.algo-error    { background: var(--danger); box-shadow: 0 0 5px var(--danger-dim); }
+.tb-algo-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
 `
+
+// algo state: 'disabled' | 'ok' | 'error' | 'testing'
+function useAlgoStatus() {
+  const [algoState, setAlgoState] = useState('disabled')
+
+  useEffect(() => {
+    let cancelled = false
+    async function poll() {
+      try {
+        const res = await fetch('/api/integrations/algo/status')
+        if (!res.ok) throw new Error('http')
+        const data = await res.json()
+        if (cancelled) return
+        setAlgoState(data.enabled ? 'ok' : 'disabled')
+      } catch {
+        if (!cancelled) setAlgoState('error')
+      }
+    }
+    poll()
+    const t = setInterval(poll, 15000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [])
+
+  const testFlash = useCallback(async () => {
+    setAlgoState('testing')
+    try {
+      const res = await fetch('/api/integrations/algo/test', { method: 'POST' })
+      const data = await res.json()
+      setAlgoState(data.success ? 'ok' : 'error')
+    } catch {
+      setAlgoState('error')
+    }
+  }, [])
+
+  return { algoState, testFlash }
+}
 
 export default function Topbar() {
   const wsStatus    = useStore(s => s.wsStatus)
@@ -120,6 +187,7 @@ export default function Topbar() {
   const imperial    = useUnits()
   const toggleUnits = useToggleUnits()
   const [now, setNow] = useState(new Date())
+  const { algoState, testFlash } = useAlgoStatus()
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000)
@@ -186,6 +254,21 @@ export default function Topbar() {
           <div className={`tb-status-dot dot-${wsStatus}`}/>
           <span>{wsStatus.toUpperCase()}</span>
         </div>
+
+        <button
+          className="tb-algo"
+          onClick={algoState !== 'disabled' ? testFlash : undefined}
+          disabled={algoState === 'disabled' || algoState === 'testing'}
+          title={
+            algoState === 'disabled' ? 'Algo 8128 — disabled' :
+            algoState === 'ok'       ? 'Algo 8128 — click to test flash' :
+            algoState === 'testing'  ? 'Algo 8128 — sending test flash…' :
+                                       'Algo 8128 — unreachable'
+          }
+        >
+          <div className={`tb-algo-icon algo-${algoState === 'testing' ? 'ok' : algoState}`}/>
+          <span className="tb-algo-label">8128</span>
+        </button>
 
         <button
           onClick={toggleUnits}
