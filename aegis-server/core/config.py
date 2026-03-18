@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     detection_retention_days: int = 30
     alert_retention_days: int = 90
 
+    # ---- Algo 8128 IP Visual Alerter ----
+    # Set ALGO_8128_ENABLED=true and configure the remaining vars to enable strobe alerts.
+    algo_8128_enabled: bool = False
+    algo_8128_url: str = "http://192.168.1.50"
+    algo_8128_api_key: str = ""
+    algo_8128_cooldown_seconds: int = 30
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
