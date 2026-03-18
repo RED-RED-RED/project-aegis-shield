@@ -1,0 +1,6 @@
+# requirements-dev.txt — test and development dependencies only
+# Not installed in the production Docker image.
+-r requirements.txt
+pytest
+pytest-asyncio
+respx==0.21.1
