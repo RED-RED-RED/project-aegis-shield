@@ -6,8 +6,6 @@ Unit tests for the Algo 8128 IP Visual Alerter integration.
 All HTTP calls are intercepted with respx so no real network access is needed.
 """
 
-import asyncio
-import time
 import pytest
 import respx
 import httpx
