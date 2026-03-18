@@ -73,6 +73,10 @@ services:
       MQTT_PORT:     1883
       MQTT_USER:     ${MQTT_USER:-rid}
       MQTT_PASSWORD: ${MQTT_PASSWORD:-changeme}
+      ALGO_8128_ENABLED:          ${ALGO_8128_ENABLED:-false}
+      ALGO_8128_URL:              ${ALGO_8128_URL:-http://192.168.1.50}
+      ALGO_8128_API_KEY:          ${ALGO_8128_API_KEY:-}
+      ALGO_8128_COOLDOWN_SECONDS: ${ALGO_8128_COOLDOWN_SECONDS:-30}
     ports:
       - "8000:8000"
     healthcheck:
