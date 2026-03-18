@@ -111,8 +111,6 @@ else
   DB_PASS="${OPT_DB_PASS:-$(gen_password)}"
   MQTT_PASS="${OPT_MQTT_PASS:-$(gen_password)}"
   BIND_HOST="${OPT_HOST}"
-  [[ -n "$DB_PASS"   ]] || fail "--db-password required or will be auto-generated"
-  [[ -n "$MQTT_PASS" ]] || fail "--mqtt-password required or will be auto-generated"
 fi
 
 # ── 1/7  Check / install Docker ──────────────────────────────────────────
@@ -153,8 +151,8 @@ cat > "$ENV_FILE" << ENV
 # AEGIS Server — Environment
 # Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-DB_NAME=aegis
-DB_USER=aegis
+DB_NAME=ridmesh
+DB_USER=ridmesh
 DB_PASSWORD=${DB_PASS}
 
 MQTT_USER=rid
