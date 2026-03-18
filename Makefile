@@ -8,14 +8,14 @@
 
 test: test-node test-server test-cal
 	@echo ""
-	@echo "  ✓ All 83 tests passed"
+	@echo "  ✓ All tests passed"
 
 test-node:
 	@echo "── ARGUS Node — parser tests (11) ──"
 	python -m pytest argus-node/tests/ -v
 
 test-server:
-	@echo "── AEGIS Server — alert engine + analysis (41) ──"
+	@echo "── AEGIS Server — alert engine + analysis + integrations ──"
 	python -m pytest aegis-server/tests/ -v
 
 test-cal:
@@ -122,9 +122,9 @@ help:
 	@echo "  ════════════════════════════════════════════════"
 	@echo ""
 	@echo "  Testing"
-	@echo "    make test           Run all 83 tests"
+	@echo "    make test           Run all tests"
 	@echo "    make test-node      ARGUS Node parser (11)"
-	@echo "    make test-server    AEGIS Server — alerts + analysis (41)"
+	@echo "    make test-server    AEGIS Server — alerts + analysis + integrations"
 	@echo "    make test-cal       Calibration engine (31)"
 	@echo ""
 	@echo "  AEGIS Shield (UI)"
