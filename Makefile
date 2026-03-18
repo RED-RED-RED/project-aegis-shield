@@ -16,6 +16,7 @@ test-node:
 
 test-server:
 	@echo "── AEGIS Server — alert engine + analysis + integrations ──"
+	pip install -q -r aegis-server/requirements-dev.txt
 	python -m pytest aegis-server/tests/ -v
 
 test-cal:
