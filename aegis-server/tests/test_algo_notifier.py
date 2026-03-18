@@ -6,6 +6,8 @@ Unit tests for the Algo 8128 IP Visual Alerter integration.
 All HTTP calls are intercepted with respx so no real network access is needed.
 """
 
+import json
+
 import pytest
 import respx
 import httpx
@@ -41,7 +43,6 @@ def make_notifier(**overrides) -> AlgoNotifier:
 # ------------------------------------------------------------------ #
 
 class TestPatternMapping:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_low_fires_pattern_1_intensity_1(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -51,12 +52,9 @@ class TestPatternMapping:
         result = await algo.trigger("low", "DRONE-001")
         assert result is True
         assert route.called
-        body = route.calls[0].request.content
-        import json
-        payload = json.loads(body)
+        payload = json.loads(route.calls[0].request.content)
         assert payload == {"pattern": 1, "intensity": 1}
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_medium_fires_pattern_5_intensity_2(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -65,11 +63,9 @@ class TestPatternMapping:
         algo = make_notifier()
         result = await algo.trigger("medium", "DRONE-001")
         assert result is True
-        import json
         payload = json.loads(route.calls[0].request.content)
         assert payload == {"pattern": 5, "intensity": 2}
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_high_fires_pattern_9_intensity_3(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -78,11 +74,9 @@ class TestPatternMapping:
         algo = make_notifier()
         result = await algo.trigger("high", "DRONE-001")
         assert result is True
-        import json
         payload = json.loads(route.calls[0].request.content)
         assert payload == {"pattern": 9, "intensity": 3}
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_unknown_level_returns_false_no_request(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -92,7 +86,6 @@ class TestPatternMapping:
         result = await algo.trigger("critical", "DRONE-001")
         assert result is False
 
-    @pytest.mark.asyncio
     async def test_disabled_returns_false_no_request(self):
         algo = make_notifier(algo_8128_enabled=False)
         result = await algo.trigger("high", "DRONE-001")
@@ -104,7 +97,6 @@ class TestPatternMapping:
 # ------------------------------------------------------------------ #
 
 class TestCooldown:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_same_level_within_cooldown_is_suppressed(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -122,7 +114,6 @@ class TestCooldown:
         assert r2 is False
         assert route.call_count == 1  # No new HTTP call
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_same_level_after_cooldown_fires_again(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -136,7 +127,6 @@ class TestCooldown:
         assert r2 is True
         assert route.call_count == 2
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_cooldown_is_per_drone(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -155,7 +145,6 @@ class TestCooldown:
 # ------------------------------------------------------------------ #
 
 class TestEscalationLogic:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_low_to_high_triggers(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -169,7 +158,6 @@ class TestEscalationLogic:
         assert r_high is True
         assert route.call_count == 2
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_medium_to_high_triggers(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -182,7 +170,6 @@ class TestEscalationLogic:
         assert r is True
         assert route.call_count == 2
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_high_to_high_within_cooldown_does_not_trigger(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -195,7 +182,6 @@ class TestEscalationLogic:
         assert r2 is False
         assert route.call_count == 1
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_high_to_low_triggers_clear(self):
         trigger_route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -207,11 +193,9 @@ class TestEscalationLogic:
         r = await algo.clear()
         assert r is True
         # Second call should be the stop command
-        import json
         stop_payload = json.loads(trigger_route.calls[-1].request.content)
         assert stop_payload == {"action": "stop"}
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_de_escalation_does_not_re_trigger(self):
         route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -230,7 +214,6 @@ class TestEscalationLogic:
 # ------------------------------------------------------------------ #
 
 class TestGracefulFailure:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_trigger_returns_false_on_timeout(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -240,7 +223,6 @@ class TestGracefulFailure:
         result = await algo.trigger("high", "DRONE-001")
         assert result is False  # No exception raised
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_trigger_returns_false_on_connection_error(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -250,7 +232,6 @@ class TestGracefulFailure:
         result = await algo.trigger("high", "DRONE-001")
         assert result is False
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_clear_returns_false_on_timeout(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -260,7 +241,6 @@ class TestGracefulFailure:
         result = await algo.clear()
         assert result is False
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_trigger_returns_false_on_http_error(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -276,7 +256,6 @@ class TestGracefulFailure:
 # ------------------------------------------------------------------ #
 
 class TestDroneTimeout:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_clear_is_called_when_drone_state_cleared(self):
         trigger_route = respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -291,14 +270,12 @@ class TestDroneTimeout:
         algo.clear_drone_state("DRONE-001")
         assert algo.get_drone_level("DRONE-001") == ""
 
-        import json
         stop_calls = [
             c for c in trigger_route.calls
             if json.loads(c.request.content).get("action") == "stop"
         ]
         assert len(stop_calls) == 1
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_after_clear_drone_state_retrigger_works(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -322,7 +299,6 @@ class TestDroneTimeout:
 # ------------------------------------------------------------------ #
 
 class TestStatusProperties:
-    @pytest.mark.asyncio
     @respx.mock
     async def test_last_trigger_metadata_updated_on_success(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
@@ -336,7 +312,6 @@ class TestStatusProperties:
         assert algo.last_trigger_ts is not None
         assert algo.last_trigger_level == "high"
 
-    @pytest.mark.asyncio
     @respx.mock
     async def test_last_trigger_metadata_not_updated_on_failure(self):
         respx.post("http://192.168.1.50/api/v1/trigger").mock(
