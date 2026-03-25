@@ -15,7 +15,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from scanner.wifi_nan import WiFiNANScanner, _CHANNELS_2G, _CHANNELS_5G
 from config.settings import NodeConfig, load_config
 
@@ -97,19 +97,20 @@ class TestGracefulFailure:
     def test_run_proceeds_if_interface_present(self):
         """run() enters sniff loop when interface exists."""
         scanner, stop = _make_scanner(iface="wlan1")
-        stop.set()  # stop immediately after first sniff timeout
 
         def fake_subprocess(cmd, **kwargs):
             mock = MagicMock()
             mock.returncode = 0
             return mock
 
+        def sniff_then_stop(*args, **kwargs):
+            stop.set()  # stop after first sniff call so run() exits cleanly
+
         with patch("subprocess.run", side_effect=fake_subprocess), \
-             patch("scanner.wifi_nan.sniff") as mock_sniff:
-            mock_sniff.return_value = None
+             patch("scanner.wifi_nan.sniff", side_effect=sniff_then_stop) as mock_sniff:
             scanner.run()
 
-        mock_sniff.assert_called()
+        mock_sniff.assert_called_once()
 
 
 # ------------------------------------------------------------------ #
@@ -144,41 +145,6 @@ class TestSimultaneousInstantiation:
 # ------------------------------------------------------------------ #
 
 class TestDetectionCallback:
-    def _make_rid_packet(self):
-        """Return a minimal mock Scapy packet that passes all filters."""
-        from unittest.mock import MagicMock
-        pkt = MagicMock()
-        # Dot11 action frame
-        pkt.haslayer.return_value = True
-        pkt.__getitem__ = MagicMock()
-
-        dot11 = MagicMock()
-        dot11.type    = 0
-        dot11.subtype = 13
-        dot11.addr2   = "fa:3b:92:0e:11:22"
-
-        radiotap = MagicMock()
-        radiotap.dBm_AntSignal = -65
-
-        def getitem(layer):
-            from scapy.all import Dot11, RadioTap, Raw
-            if layer is Dot11:
-                return dot11
-            if layer is RadioTap:
-                return radiotap
-            if layer is Raw:
-                return raw
-            return MagicMock()
-
-        raw = MagicMock()
-        # Craft a valid-looking NAN action frame header + stub RID payload
-        # Category=0x04, Code=0x09, OUI=FA:0B:BE, subtype byte, padding, RID data
-        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
-        raw.__bytes__ = lambda self: raw_bytes
-
-        pkt.__getitem__ = MagicMock(side_effect=getitem)
-        return pkt
-
     def test_band_passed_to_publish_detection_2g(self):
         scanner, _ = _make_scanner(band="2.4")
         rid_frame = MagicMock()
@@ -187,37 +153,29 @@ class TestDetectionCallback:
         rid_frame.lon = -71.0
         rid_frame.timestamp = time.time()
 
-        with patch.object(scanner._parser, "parse", return_value=[rid_frame]):
-            # Simulate _process being called with a minimal packet
-            pkt = MagicMock()
-            pkt.haslayer.return_value = True
+        # Craft a valid NAN action frame header so _process passes all checks
+        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
 
-            from scapy.all import Dot11, RadioTap, Raw
-            dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
-            radiotap = MagicMock(dBm_AntSignal=-70)
-            raw = MagicMock()
-            raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
+        from scapy.all import Dot11, RadioTap, Raw
+        dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
 
-            def getitem(layer):
-                if layer is Dot11:      return dot11
-                if layer is RadioTap:   return radiotap
-                if layer is Raw:        return raw
-                return MagicMock()
+        def getitem(layer):
+            if layer is Dot11:    return dot11
+            if layer is RadioTap: return MagicMock(dBm_AntSignal=-70)
+            if layer is Raw:      return MagicMock()
+            return MagicMock()
 
-            pkt.__getitem__ = MagicMock(side_effect=getitem)
-            with patch("builtins.bytes", wraps=bytes) as _:
-                import unittest.mock as um
-                with um.patch.object(type(raw), "__bytes__", return_value=raw_bytes):
-                    pass
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(side_effect=getitem)
 
-            # Call _process directly with mocked bytes extraction
-            with patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
-                scanner._process(pkt)
+        with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
+             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+            scanner._process(pkt)
 
-        # Verify band="2.4" was passed
         call_kwargs = scanner.publisher.publish_detection.call_args
-        if call_kwargs is not None:
-            assert call_kwargs.kwargs.get("band") == "2.4"
+        assert call_kwargs is not None, "publish_detection was not called"
+        assert call_kwargs.kwargs.get("band") == "2.4"
 
     def test_band_passed_to_publish_detection_5g(self):
         scanner, _ = _make_scanner(band="5", iface="wlan2")
@@ -227,26 +185,28 @@ class TestDetectionCallback:
         rid_frame.lon = -71.0
         rid_frame.timestamp = time.time()
 
-        with patch.object(scanner._parser, "parse", return_value=[rid_frame]):
-            from scapy.all import Dot11, RadioTap, Raw
-            pkt = MagicMock()
-            pkt.haslayer.return_value = True
-            dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
-            raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
+        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
 
-            def getitem(layer):
-                if layer is Dot11:    return dot11
-                if layer is RadioTap: return MagicMock(dBm_AntSignal=-55)
-                if layer is Raw:      return MagicMock()
-                return MagicMock()
+        from scapy.all import Dot11, RadioTap, Raw
+        dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
 
-            pkt.__getitem__ = MagicMock(side_effect=getitem)
-            with patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
-                scanner._process(pkt)
+        def getitem(layer):
+            if layer is Dot11:    return dot11
+            if layer is RadioTap: return MagicMock(dBm_AntSignal=-55)
+            if layer is Raw:      return MagicMock()
+            return MagicMock()
+
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(side_effect=getitem)
+
+        with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
+             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+            scanner._process(pkt)
 
         call_kwargs = scanner.publisher.publish_detection.call_args
-        if call_kwargs is not None:
-            assert call_kwargs.kwargs.get("band") == "5"
+        assert call_kwargs is not None, "publish_detection was not called"
+        assert call_kwargs.kwargs.get("band") == "5"
 
 
 # ------------------------------------------------------------------ #
