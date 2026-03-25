@@ -21,7 +21,7 @@ const css = `
   position: absolute;
   bottom: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--amber-dim), transparent);
+  background: linear-gradient(90deg, transparent, var(--steel-blue-dim), transparent);
 }
 .tb-logo {
   display: flex;
@@ -41,8 +41,8 @@ const css = `
   font-size: 17px;
   letter-spacing: 4px;
   text-transform: uppercase;
-  color: var(--amber);
-  text-shadow: 0 0 12px var(--amber-dim);
+  color: var(--steel-blue);
+  text-shadow: 0 0 12px var(--steel-blue-dim);
 }
 .tb-logo-sub {
   font-family: var(--mono);
@@ -82,9 +82,9 @@ const css = `
   color: var(--text);
   line-height: 1;
 }
-.tb-stat-val.amber  { color: var(--amber); text-shadow: 0 0 8px var(--amber-dim); }
-.tb-stat-val.green  { color: var(--phosphor); text-shadow: 0 0 8px var(--phosphor-dim); }
-.tb-stat-val.danger { color: var(--danger); text-shadow: 0 0 8px var(--danger-dim); animation: pulse-danger 1.5s infinite; }
+.tb-stat-val.amber  { color: var(--amber); }
+.tb-stat-val.green  { color: var(--olive); }
+.tb-stat-val.danger { color: var(--danger); animation: pulse-danger 1.5s infinite; }
 .tb-status {
   display: flex;
   align-items: center;
@@ -99,8 +99,8 @@ const css = `
   border-radius: 50%;
   flex-shrink: 0;
 }
-.dot-connected    { background: var(--phosphor); animation: pulse-green 2s infinite; box-shadow: 0 0 6px var(--phosphor); }
-.dot-connecting   { background: var(--amber); animation: pulse-amber 1s infinite; }
+.dot-connected    { background: var(--node-online); animation: pulse-blue 2s infinite; box-shadow: 0 0 6px var(--node-online); }
+.dot-connecting   { background: var(--node-warning); animation: pulse-amber 1s infinite; }
 .dot-disconnected { background: var(--danger); }
 .tb-time {
   font-family: var(--mono);
@@ -131,7 +131,7 @@ const css = `
   border-radius: 50%;
   flex-shrink: 0;
 }
-.tb-algo-icon.algo-ok       { background: var(--phosphor); box-shadow: 0 0 5px var(--phosphor); }
+.tb-algo-icon.algo-ok       { background: var(--olive); box-shadow: 0 0 5px var(--olive); }
 .tb-algo-icon.algo-disabled { background: var(--muted); }
 .tb-algo-icon.algo-error    { background: var(--danger); box-shadow: 0 0 5px var(--danger-dim); }
 .tb-algo-label {
@@ -211,10 +211,10 @@ export default function Topbar() {
           <div className="tb-logo-hex">
             <svg viewBox="0 0 26 26" fill="none">
               <polygon points="13,1 24,7 24,19 13,25 2,19 2,7"
-                stroke="var(--amber)" strokeWidth="1.5"
-                fill="rgba(232,160,32,0.08)"/>
+                stroke="var(--steel-blue)" strokeWidth="1.5"
+                fill="rgba(74,111,165,0.08)"/>
               <text x="13" y="17" textAnchor="middle"
-                fontFamily="var(--mono)" fontSize="9" fill="var(--amber)" fontWeight="bold">A</text>
+                fontFamily="var(--mono)" fontSize="9" fill="var(--steel-blue)" fontWeight="bold">A</text>
             </svg>
           </div>
           <div>
@@ -277,7 +277,7 @@ export default function Topbar() {
             background: 'transparent',
             border: '1px solid var(--border)',
             borderRadius: '3px',
-            color: imperial ? 'var(--amber)' : 'var(--ice)',
+            color: imperial ? 'var(--olive)' : 'var(--steel-blue)',
             fontFamily: 'var(--mono)',
             fontSize: '10px',
             padding: '3px 8px',
