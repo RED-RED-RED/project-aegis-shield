@@ -6,7 +6,7 @@ Pydantic v2 models for API request/response validation and serialization.
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ------------------------------------------------------------------ #
@@ -48,8 +48,7 @@ class NodeOut(BaseModel):
     uptime_s: Optional[int] = None
     radios: list[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ------------------------------------------------------------------ #
@@ -104,8 +103,7 @@ class DetectionOut(BaseModel):
     status: Optional[str] = None
     operator_id: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DroneTrackOut(BaseModel):
@@ -134,8 +132,7 @@ class DroneTrackOut(BaseModel):
     detection_count: int = 0
     detecting_nodes: list[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ------------------------------------------------------------------ #
@@ -156,8 +153,7 @@ class AlertOut(BaseModel):
     acknowledged: bool = False
     acknowledged_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AcknowledgeAlert(BaseModel):
