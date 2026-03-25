@@ -23,7 +23,7 @@ const css = `
 }
 .tp-header-title {
   font-family: var(--cond); font-weight: 900; font-size: 11px;
-  letter-spacing: 3px; text-transform: uppercase; color: var(--amber);
+  letter-spacing: 3px; text-transform: uppercase; color: var(--olive);
 }
 .tp-stat {
   display: flex; flex-direction: column; gap: 1px;
@@ -34,7 +34,7 @@ const css = `
 .tp-stat-val   { font-family:var(--mono); font-size:15px; font-weight:600; }
 .tv-danger { color: var(--danger); text-shadow: 0 0 8px var(--danger-dim); }
 .tv-amber  { color: var(--amber);  text-shadow: 0 0 8px var(--amber-dim); }
-.tv-green  { color: var(--phosphor); }
+.tv-green  { color: var(--olive); }
 
 /* ── Body: two-column layout ───────────────────────────── */
 .tp-body {
@@ -51,12 +51,12 @@ const css = `
 /* ── Drone threat row ──────────────────────────────────── */
 .tdr {
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(30,48,64,0.4);
+  border-bottom: 1px solid rgba(42,48,40,0.4);
   cursor: pointer; transition: background 0.1s;
   display: flex; align-items: center; gap: 12px;
 }
 .tdr:hover { background: var(--bg2); }
-.tdr.selected { background: rgba(232,160,32,0.05); border-left: 2px solid var(--amber); }
+.tdr.selected { background: rgba(74,111,165,0.05); border-left: 2px solid var(--steel-blue); }
 .tdr-gauge {
   flex-shrink: 0;
   position: relative; width: 42px; height: 42px;
@@ -92,7 +92,7 @@ const css = `
 }
 .flag-danger { color:var(--danger); border-color:var(--danger-dim); background:var(--danger-glow); }
 .flag-amber  { color:var(--amber);  border-color:var(--amber-dim);  background:var(--amber-glow); }
-.flag-ice    { color:var(--ice);    border-color:var(--ice-dim);    background:rgba(126,207,234,0.06); }
+.flag-ice    { color:var(--ice);    border-color:var(--ice-dim);    background:rgba(74,111,165,0.06); }
 
 /* ── Detail pane ───────────────────────────────────────── */
 .detail-hero {
@@ -156,7 +156,7 @@ const css = `
 }
 .mlat-row {
   display:flex; justify-content:space-between; align-items:center;
-  padding:4px 0; border-bottom:1px solid rgba(30,48,64,0.4);
+  padding:4px 0; border-bottom:1px solid rgba(42,48,40,0.4);
   font-family:var(--mono); font-size:10px;
 }
 .mlat-row:last-child { border-bottom:none; }
@@ -183,7 +183,7 @@ function Gauge({ score, size = 42, strokeWidth = 4 }) {
   const filled = ((score ?? 0) / 100) * circ
   const color  = (score ?? 0) >= 70 ? 'var(--danger)'
                : (score ?? 0) >= 40 ? 'var(--amber)'
-               : 'var(--phosphor)'
+               : 'var(--olive)'
   const level  = threatLabel(score)
 
   return (
@@ -211,7 +211,7 @@ function FactorBar({ name, value, weight }) {
   const pct     = value * 100
   const color   = contrib >= 15 ? 'var(--danger)'
                 : contrib >= 6  ? 'var(--amber)'
-                : 'var(--phosphor)'
+                : 'var(--olive)'
   const { label } = FACTOR_LABELS[name] || { label: name }
 
   return (
@@ -337,15 +337,15 @@ export default function ThreatPanel() {
                     <div className="detail-type">{drone.ua_type || 'Unknown aircraft type'}</div>
                     <div className="detail-chips">
                       {drone.has_valid_rid
-                        ? <span className="detail-chip" style={{color:'var(--phosphor)',borderColor:'var(--phosphor-dim)',background:'var(--phosphor-glow)'}}>✓ VALID RID</span>
+                        ? <span className="detail-chip" style={{color:'var(--olive)',borderColor:'var(--olive-dim)',background:'rgba(74,124,89,0.1)'}}>✓ VALID RID</span>
                         : <span className="detail-chip" style={{color:'var(--danger)',borderColor:'var(--danger-dim)',background:'var(--danger-glow)'}}>⚠ NO RID</span>
                       }
                       {drone.operator_id
-                        ? <span className="detail-chip" style={{color:'var(--phosphor)',borderColor:'var(--phosphor-dim)',background:'var(--phosphor-glow)'}}>{drone.operator_id}</span>
+                        ? <span className="detail-chip" style={{color:'var(--olive)',borderColor:'var(--olive-dim)',background:'rgba(74,124,89,0.1)'}}>{drone.operator_id}</span>
                         : <span className="detail-chip" style={{color:'var(--danger)',borderColor:'var(--danger-dim)',background:'var(--danger-glow)'}}>NO OPERATOR ID</span>
                       }
                       {drone.last_transport && (
-                        <span className="detail-chip" style={{color:'var(--ice)',borderColor:'var(--ice-dim)',background:'rgba(126,207,234,0.06)'}}>
+                        <span className="detail-chip" style={{color:'var(--ice)',borderColor:'var(--ice-dim)',background:'rgba(74,111,165,0.06)'}}>
                           {drone.last_transport === 'wifi_nan' ? 'WiFi NAN' : 'BT5 LR'}
                         </span>
                       )}
@@ -394,7 +394,7 @@ export default function ThreatPanel() {
                       {[
                         { key:'Estimated Position', val:`${drone.mlat_lat.toFixed(5)}, ${drone.mlat_lon.toFixed(5)}` },
                         { key:'Broadcast Position', val:`${drone.lat?.toFixed(5)}, ${drone.lon?.toFixed(5)}` },
-                        { key:'Position Mismatch',  val: <span style={{color: drone.mlat_mismatch_m>250?'var(--danger)':'var(--phosphor)'}}>{fmtDist(drone.mlat_mismatch_m, imperial)}</span> },
+                        { key:'Position Mismatch',  val: <span style={{color: drone.mlat_mismatch_m>250?'var(--danger)':'var(--olive)'}}>{fmtDist(drone.mlat_mismatch_m, imperial)}</span> },
                         { key:'Confidence Radius',  val: `±${fmtDist(drone.mlat_radius_m, imperial)}` },
                         { key:'Node Count',         val: `${drone.mlat_node_count} nodes` },
                       ].map(({ key, val }) => (
@@ -411,13 +411,13 @@ export default function ThreatPanel() {
                               width:`${(drone.spoof_confidence??0)*100}%`,
                               background: (drone.spoof_confidence??0) > 0.7 ? 'var(--danger)'
                                         : (drone.spoof_confidence??0) > 0.4 ? 'var(--amber)'
-                                        : 'var(--phosphor)'
+                                        : 'var(--olive)'
                             }}/>
                           </div>
                           <span className="mlat-val" style={{
                             color: (drone.spoof_confidence??0) > 0.7 ? 'var(--danger)'
                                  : (drone.spoof_confidence??0) > 0.4 ? 'var(--amber)'
-                                 : 'var(--phosphor)',
+                                 : 'var(--olive)',
                             minWidth: 36, textAlign:'right'
                           }}>
                             {((drone.spoof_confidence??0)*100).toFixed(0)}%
