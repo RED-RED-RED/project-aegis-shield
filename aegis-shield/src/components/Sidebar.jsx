@@ -38,9 +38,9 @@ const css = `
   color: var(--text);
 }
 .sb-nav-item.active {
-  background: var(--amber-glow);
-  border-color: var(--amber-dim);
-  color: var(--amber);
+  background: var(--steel-blue-dim);
+  border-color: var(--steel-blue-dim);
+  color: var(--steel-blue);
 }
 .sb-nav-icon {
   font-size: 13px;
@@ -81,8 +81,8 @@ const css = `
 }
 .sb-node:hover { background: var(--bg3); }
 .sb-node.selected {
-  background: rgba(232,160,32,0.06);
-  border-color: var(--amber-dim);
+  background: rgba(74,111,165,0.06);
+  border-color: var(--steel-blue-dim);
 }
 .sb-node.offline { opacity: 0.45; }
 .sb-node-header {
@@ -96,8 +96,8 @@ const css = `
   border-radius: 50%;
   flex-shrink: 0;
 }
-.nd-online  { background: var(--phosphor); box-shadow: 0 0 4px var(--phosphor); }
-.nd-warn    { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+.nd-online  { background: var(--node-online); box-shadow: 0 0 4px var(--node-online); }
+.nd-warn    { background: var(--node-warning); box-shadow: 0 0 4px var(--node-warning); }
 .nd-offline { background: var(--muted); }
 .sb-node-name {
   font-family: var(--cond);
@@ -134,9 +134,9 @@ const css = `
   border: 1px solid;
   text-transform: uppercase;
 }
-.r-wifi { color: var(--ice);      border-color: var(--ice-dim);      background: rgba(126,207,234,0.06); }
-.r-bt   { color: #b39ddb;         border-color: #4a2c6a;             background: rgba(179,157,219,0.06); }
-.r-sdr  { color: var(--amber);    border-color: var(--amber-dim);    background: var(--amber-glow); }
+.r-wifi { color: var(--ice);            border-color: var(--ice-dim);      background: rgba(74,111,165,0.06); }
+.r-bt   { color: var(--steel-blue-light); border-color: var(--steel-blue-dim); background: rgba(74,111,165,0.06); }
+.r-sdr  { color: var(--olive);    border-color: var(--olive-dim);    background: rgba(74,124,89,0.06); }
 .sb-health {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
@@ -162,8 +162,8 @@ const css = `
   border-radius: 2px;
   transition: width 0.5s;
 }
-.bf-amber  { background: var(--amber); }
-.bf-green  { background: var(--phosphor); }
+.bf-amber  { background: var(--node-warning); }
+.bf-green  { background: var(--olive); }
 .bf-danger { background: var(--danger); }
 .sb-health-label { width: 28px; color: var(--muted); }
 .sb-health-val   { width: 32px; text-align: right; color: var(--text-dim); }
@@ -281,8 +281,8 @@ export default function Sidebar() {
                 <div key={label} style={{display:'flex',alignItems:'center',gap:4,fontFamily:'var(--mono)',fontSize:9,color:'var(--text-dim)'}}>
                   <div style={{
                     width:6,height:6,borderRadius:'50%',flexShrink:0,
-                    background: val==='ok' ? 'var(--phosphor)' : val==='warn' ? 'var(--amber)' : 'var(--danger)',
-                    boxShadow: val==='ok' ? '0 0 4px var(--phosphor)' : val==='warn' ? '0 0 4px var(--amber)' : '0 0 4px var(--danger)',
+                    background: val==='ok' ? 'var(--node-online)' : val==='warn' ? 'var(--node-warning)' : 'var(--danger)',
+                    boxShadow: val==='ok' ? '0 0 4px var(--node-online)' : val==='warn' ? '0 0 4px var(--node-warning)' : '0 0 4px var(--danger)',
                   }}/>
                   {label}
                 </div>
