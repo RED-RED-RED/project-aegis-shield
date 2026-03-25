@@ -6,16 +6,16 @@ const WS_URL = (window.location.protocol === 'https:' ? 'wss://' : 'ws://')
 
 // ── Threat helpers ─────────────────────────────────────────────────────────
 export const threatColor = (score) => {
-  if (score == null) return 'var(--muted)'
-  if (score >= 70)   return 'var(--danger)'
-  if (score >= 40)   return 'var(--amber)'
-  return 'var(--phosphor)'
+  if (score == null) return 'var(--text-muted)'
+  if (score >= 70)   return 'var(--threat-high)'
+  if (score >= 40)   return 'var(--threat-med)'
+  return 'var(--threat-low)'
 }
 export const threatBg = (score) => {
   if (score == null) return 'transparent'
-  if (score >= 70)   return 'var(--danger-glow)'
-  if (score >= 40)   return 'var(--amber-glow)'
-  return 'var(--phosphor-glow)'
+  if (score >= 70)   return 'var(--threat-high-bg)'
+  if (score >= 40)   return 'var(--threat-med-bg)'
+  return 'var(--threat-low-bg)'
 }
 export const threatLabel = (score) => {
   if (score == null) return '—'
