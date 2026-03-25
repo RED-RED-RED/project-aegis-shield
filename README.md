@@ -5,24 +5,24 @@
 
 ```
                     ┌──────────────────────────────────────────┐
-                    │            AEGIS SHIELD (UI)              │
-                    │  Live map · Threat scores · MLAT circles  │
-                    │  Packet feed · Node health · Alert feed   │
+                    │          AEGIS SHIELD (UI)               │
+                    │  Live map · Threat scores · MLAT circles │
+                    │  Packet feed · Node health · Alert feed  │
                     └──────────────────┬───────────────────────┘
                                        │ WebSocket /ws
                     ┌──────────────────▼───────────────────────┐
-                    │            AEGIS SERVER                    │
-                    │  FastAPI · TimescaleDB · MQTT broker       │
-                    │  Alert engine · Trilateration · Threat AI  │
-                    └────┬──────────────┬───────────────┬───────┘
-                         │ MQTT         │ MQTT           │ MQTT
-              ┌──────────▼──┐  ┌────────▼──┐  ┌─────────▼──┐
-              │  ARGUS-01    │  │  ARGUS-02  │  │  ARGUS-03  │
-              │  Wi-Fi NAN   │  │  Wi-Fi NAN │  │  Wi-Fi NAN │
-              │  BT5 LR      │  │  BT5 LR    │  │  BT5 LR    │
-              │  RTL-SDR     │  │  GPS       │  │  RTL-SDR   │
-              │  GPS         │  │            │  │  GPS       │
-              └─────────────┘  └────────────┘  └────────────┘
+                    │            AEGIS SERVER                  │
+                    │  FastAPI · TimescaleDB · MQTT broker     │
+                    │  Alert engine · Trilateration · Threat AI│
+                    └──────┬───────────────┬───────────────┬───┘
+                           │ MQTT          │ MQTT          │ MQTT
+                    ┌──────▼─────┐  ┌──────▼─────┐  ┌──────▼─────┐
+                    │  ARGUS-01  │  │  ARGUS-02  │  │  ARGUS-03  │
+                    │  Wi-Fi NAN │  │  Wi-Fi NAN │  │  Wi-Fi NAN │
+                    │  BT5 LR    │  │  BT5 LR    │  │  BT5 LR    │
+                    │  RTL-SDR   │  │  GPS       │  │  RTL-SDR   │
+                    │  GPS       │  │            │  │  GPS       │
+                    └────────────┘  └────────────┘  └────────────┘
 ```
 
 AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three radio technologies (Wi-Fi NAN, Bluetooth 4 legacy, Bluetooth 5 Long Range), correlates detections from multiple sensor nodes, estimates true drone position via RSSI trilateration (MLAT), and scores each drone with an 8-factor threat model. Everything streams live to AEGIS Shield — a tactical operations dashboard with a real Leaflet map, animated threat gauges, and a live packet feed.
@@ -365,7 +365,7 @@ Alerts can be dismissed individually (× button, visible on hover) or all at onc
 - **MLAT marker** — dashed circle at RSSI-estimated position, colour encodes spoof confidence
 - **Confidence circle** — `L.circle` radius = MLAT uncertainty in metres
 - **Mismatch line** — dashed line from broadcast position to MLAT estimate (drawn when > 100m divergence, red above 500m)
-- **Node hexagon** — amber hex with expanding CSS pulse rings when online
+- **Node hexagon** — steel-blue hex with expanding CSS pulse rings when online
 - **Track trail** — 60-point rolling history polyline, inherits threat colour
 
 ### Building from source
@@ -515,11 +515,11 @@ The R820T tuner cannot tune above ~1,766 MHz. If you have modified `SWEEP_FREQS`
 ## Development
 
 ```bash
-# Run all 133 tests
+# Run all 147 tests
 make test
 
 # Individual suites
-make test-node     # 53 tests — ARGUS Node RID parser + GPS subsystem
+make test-node     # 67 tests — ARGUS Node RID parser + GPS + Wi-Fi NAN (scapy required for Wi-Fi NAN)
 make test-server   # 49 tests — alert engine + trilateration + scoring
 
 # Start server
@@ -539,10 +539,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and workflow.
 |---|---|
 | ARGUS Node — OpenDroneID parser | 11 |
 | ARGUS Node — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 42 |
+| ARGUS Node — Wi-Fi NAN dual-adapter scanner (requires scapy) | 14 |
 | AEGIS Server — alert engine (rules + GPS jamming alerts) | 19 |
 | AEGIS Server — trilateration + threat scoring | 30 |
 | Calibration — engine, collector, config writer | 31 |
-| **Total** | **133** |
+| **Total** | **147** |
 
 ---
 
