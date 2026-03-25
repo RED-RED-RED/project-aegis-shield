@@ -28,9 +28,18 @@ gps:
 
 # ---- Wi-Fi NAN (Alfa AWUS036ACM) ----
 wifi:
-  enabled: true
-  iface: "wlan1mon"         # Must be in monitor mode before agent starts
-  channel: 6
+  # Primary adapter — 2.4 GHz NAN scanning
+  interface_2g: "wlan1"
+  enabled_2g: true
+  channels_2g: [1, 6, 11]
+  dwell_ms_2g: 200
+
+  # Secondary adapter — 5 GHz NAN scanning
+  # Requires second AWUS036ACM or compatible dual-band adapter
+  interface_5g: "wlan2"
+  enabled_5g: false          # disabled by default — enable when second adapter present
+  channels_5g: [36, 40, 44, 48, 149, 153, 157, 161]
+  dwell_ms_5g: 200
 
 # ---- Bluetooth (nRF52840 dongle) ----
 bt:
