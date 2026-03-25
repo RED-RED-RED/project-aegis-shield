@@ -58,16 +58,16 @@ const css = `
   font-family: var(--mono);
   font-size: 10px;
   line-height: 1.6;
-  border-bottom: 1px solid rgba(30,48,64,0.25);
+  border-bottom: 1px solid rgba(42,48,40,0.25);
   transition: background 0.1s;
 }
 .pf-row:hover { background: var(--bg2); }
 .pf-row.new   { animation: sweep-in 0.2s ease; }
 .pf-time  { color: var(--muted); }
-.pf-node  { color: var(--amber); }
+.pf-node  { color: var(--olive); }
 .pf-type  {}
 .pf-wifi  { color: var(--ice); }
-.pf-bt    { color: #b39ddb; }
+.pf-bt    { color: var(--steel-blue-light); }
 .pf-band  {
   display: inline-flex;
   align-items: center;
@@ -81,8 +81,8 @@ const css = `
   white-space: nowrap;
   align-self: center;
 }
-.pf-band-24  { background: rgba(30,120,200,0.25); color: #64b5f6; }
-.pf-band-5   { background: rgba(130,60,200,0.25); color: #ce93d8; }
+.pf-band-24  { background: rgba(74,111,165,0.25); color: var(--steel-blue-light); }
+.pf-band-5   { background: rgba(122,159,208,0.18); color: var(--ice); }
 .pf-band-unk { background: rgba(80,80,80,0.2);    color: var(--muted); }
 .pf-data  { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-drone { color: var(--text); }
