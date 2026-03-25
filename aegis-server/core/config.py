@@ -6,7 +6,7 @@ Uses pydantic-settings for validation and .env file support.
 """
 
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -62,9 +62,7 @@ class Settings(BaseSettings):
     algo_8128_api_key: str = ""
     algo_8128_cooldown_seconds: int = 30
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
 @lru_cache
