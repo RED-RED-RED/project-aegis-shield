@@ -96,11 +96,13 @@ class MQTTPublisher:
         node_lat: float,
         node_lon: float,
         node_alt: float,
+        band: Optional[str] = None,
     ):
         """Enqueue a drone detection event. Non-blocking."""
         payload = {
             "node_id": node_id,
             "transport": transport,
+            "band": band,
             "rssi": rssi,
             "src_addr": src_addr,
             "node_position": {
