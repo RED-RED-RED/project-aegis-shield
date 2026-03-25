@@ -42,7 +42,7 @@ const css = `
 }
 .rc-amber  { background: var(--amber-glow); color: var(--amber); border: 1px solid var(--amber-dim); }
 .rc-danger { background: var(--danger-glow); color: var(--danger); border: 1px solid var(--danger-dim); }
-.rc-green  { background: var(--phosphor-glow); color: var(--phosphor); border: 1px solid var(--phosphor-dim); }
+.rc-green  { background: rgba(74,124,89,0.1); color: var(--olive); border: 1px solid var(--olive-dim); }
 .rp-scroll {
   overflow-y: auto;
   flex: 1;
@@ -51,12 +51,12 @@ const css = `
 /* Drone rows */
 .drone-row {
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(30,48,64,0.5);
+  border-bottom: 1px solid rgba(42,48,40,0.5);
   cursor: pointer;
   transition: background 0.1s;
 }
 .drone-row:hover    { background: var(--bg3); }
-.drone-row.selected { background: rgba(232,160,32,0.06); border-left: 2px solid var(--amber); }
+.drone-row.selected { background: rgba(74,111,165,0.06); border-left: 2px solid var(--steel-blue); }
 .dr-header {
   display: flex;
   align-items: center;
@@ -77,7 +77,7 @@ const css = `
   border-radius: 2px;
   text-transform: uppercase;
 }
-.db-ok      { background: var(--phosphor-glow); color: var(--phosphor); border: 1px solid var(--phosphor-dim); }
+.db-ok      { background: rgba(74,124,89,0.1); color: var(--olive); border: 1px solid var(--olive-dim); }
 .db-alert   { background: var(--danger-glow);   color: var(--danger);   border: 1px solid var(--danger-dim); }
 .db-unknown { background: var(--amber-glow);    color: var(--amber);    border: 1px solid var(--amber-dim); }
 .dr-meta {
@@ -102,7 +102,7 @@ const css = `
   font-size: 9px;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: var(--amber);
+  color: var(--olive);
   margin-bottom: 8px;
 }
 .detail-id {
@@ -131,7 +131,7 @@ const css = `
 .dc-label { font-size: 7px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
 .dc-val   { font-family: var(--mono); font-size: 12px; color: var(--text); }
 .dc-val.amber  { color: var(--amber); }
-.dc-val.green  { color: var(--phosphor); }
+.dc-val.green  { color: var(--olive); }
 .dc-val.danger { color: var(--danger); }
 .dc-val.ice    { color: var(--ice); }
 .detail-row {
@@ -140,7 +140,7 @@ const css = `
   font-family: var(--mono);
   font-size: 10px;
   padding: 3px 0;
-  border-bottom: 1px solid rgba(30,48,64,0.4);
+  border-bottom: 1px solid rgba(42,48,40,0.4);
 }
 .detail-row-label { color: var(--muted); width: 72px; flex-shrink: 0; }
 .detail-row-val   { color: var(--text); }
@@ -148,7 +148,7 @@ const css = `
 /* Alerts */
 .alert-row {
   padding: 7px 12px;
-  border-bottom: 1px solid rgba(30,48,64,0.4);
+  border-bottom: 1px solid rgba(42,48,40,0.4);
   border-left: 3px solid transparent;
   cursor: pointer;
   transition: background 0.1s;
@@ -364,7 +364,7 @@ function DroneDetail({ drone }) {
       </div>
       <div className="detail-row">
         <span className="detail-row-label">Operator</span>
-        <span className="detail-row-val" style={{color: drone.operator_id ? 'var(--phosphor)' : 'var(--danger)'}}>
+        <span className="detail-row-val" style={{color: drone.operator_id ? 'var(--olive)' : 'var(--danger)'}}>
           {drone.operator_id || '— NONE —'}
         </span>
       </div>
