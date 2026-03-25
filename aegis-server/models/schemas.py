@@ -79,6 +79,7 @@ class DetectionEvent(BaseModel):
     """Parsed from MQTT argus/<node_id>/detection"""
     node_id: str
     transport: str
+    band: Optional[str] = None
     rssi: Optional[int] = None
     src_addr: Optional[str] = None
     node_position: NodePosition
@@ -91,6 +92,7 @@ class DetectionOut(BaseModel):
     detected_at: datetime
     node_id: str
     transport: str
+    band: Optional[str] = None
     rssi: Optional[int] = None
     drone_id: str
     drone_lat: Optional[float] = None
