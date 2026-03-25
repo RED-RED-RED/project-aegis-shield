@@ -87,18 +87,39 @@ def main():
     # ---- Scanner threads ----
     threads = []
 
-    # Wi-Fi NAN scanner (requires interface in monitor mode)
-    if cfg.wifi_enabled:
-        wifi = WiFiNANScanner(
-            iface=cfg.wifi_iface,
+    # Wi-Fi NAN scanners (one per adapter; each requires its interface in monitor mode)
+    wifi_bands_active = []
+
+    if cfg.wifi_enabled_2g:
+        wifi_2g = WiFiNANScanner(
+            iface=cfg.wifi_interface_2g,
             publisher=publisher,
             gps=gps,
             node_id=cfg.node_id,
             stop_event=_stop_event,
+            band="2.4",
+            channels=cfg.wifi_channels_2g,
+            dwell_ms=cfg.wifi_dwell_ms_2g,
         )
-        t = threading.Thread(target=wifi.run, name="wifi-nan", daemon=True)
-        threads.append(t)
-        log.info(f"Wi-Fi NAN scanner → {cfg.wifi_iface}")
+        threads.append(threading.Thread(target=wifi_2g.run, name="wifi-nan-2g", daemon=True))
+        wifi_bands_active.append(f"2.4 GHz ({cfg.wifi_interface_2g})")
+
+    if cfg.wifi_enabled_5g:
+        wifi_5g = WiFiNANScanner(
+            iface=cfg.wifi_interface_5g,
+            publisher=publisher,
+            gps=gps,
+            node_id=cfg.node_id,
+            stop_event=_stop_event,
+            band="5",
+            channels=cfg.wifi_channels_5g,
+            dwell_ms=cfg.wifi_dwell_ms_5g,
+        )
+        threads.append(threading.Thread(target=wifi_5g.run, name="wifi-nan-5g", daemon=True))
+        wifi_bands_active.append(f"5 GHz ({cfg.wifi_interface_5g})")
+
+    if wifi_bands_active:
+        log.info(f"WiFi NAN scanning: {', '.join(wifi_bands_active)}")
 
     # Bluetooth 4/5 LR scanner (uses asyncio internally via bleak)
     if cfg.bt_enabled:
@@ -138,9 +159,9 @@ def main():
 
     # Build radios list based on enabled scanners
     active_radios = []
-    if cfg.wifi_enabled: active_radios.append("wifi")
-    if cfg.bt_enabled:   active_radios.append("bt")
-    if cfg.sdr_enabled:  active_radios.append("sdr")
+    if wifi_bands_active:    active_radios.append("wifi")
+    if cfg.bt_enabled:       active_radios.append("bt")
+    if cfg.sdr_enabled:      active_radios.append("sdr")
 
     # ---- Heartbeat loop ----
     try:
