@@ -22,6 +22,7 @@ Requires:
 
 import logging
 import struct
+import subprocess
 import threading
 import time
 from dataclasses import dataclass
@@ -52,10 +53,18 @@ class WiFiDetection:
     timestamp: float
 
 
+_CHANNELS_2G = [1, 6, 11]
+_CHANNELS_5G = [36, 40, 44, 48, 149, 153, 157, 161]  # UNII-1 + UNII-3
+
+
 class WiFiNANScanner:
     """
     Sniffs 802.11 monitor-mode frames looking for Remote ID NAN action frames.
     Parsed frames are published via MQTTPublisher.
+
+    Instantiate once per adapter. Pass band="2.4" or band="5" to configure
+    channel list and log labels. Both instances share the same publisher so
+    detections from either band feed the same MQTT pipeline.
     """
 
     def __init__(
@@ -65,14 +74,26 @@ class WiFiNANScanner:
         gps: GPSDaemon,
         node_id: str,
         stop_event: threading.Event,
+        band: str = "2.4",
         channels: list[int] | None = None,
+        dwell_ms: int = 200,
     ):
         self.iface = iface
         self.publisher = publisher
         self.gps = gps
         self.node_id = node_id
         self.stop_event = stop_event
-        self.channels = channels or [6, 1, 11]  # Hop across common 2.4 GHz channels
+        self.band = band
+        self.dwell_ms = dwell_ms
+
+        if channels is not None:
+            self.channels = channels
+        elif band == "5":
+            self.channels = _CHANNELS_5G
+        else:
+            self.channels = _CHANNELS_2G
+
+        self._label = f"WiFi NAN {self.band}GHz"
         self._parser = OpenDroneIDParser()
         self._seen: dict[str, float] = {}   # dedup: drone_id → last_seen timestamp
         self._dedup_window = 2.0            # seconds
@@ -83,7 +104,20 @@ class WiFiNANScanner:
 
     def run(self):
         """Blocking run — called from a dedicated thread."""
-        log.info(f"Wi-Fi NAN scanner starting on {self.iface}")
+        # Verify the interface exists before committing to scan
+        result = subprocess.run(
+            ["ip", "link", "show", self.iface],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            log.warning(
+                f"[{self._label}] Interface {self.iface} not found — "
+                "skipping scanner. Single-adapter deployments are unaffected."
+            )
+            return
+
+        log.info(f"[{self._label}] Scanner starting on {self.iface} "
+                 f"(channels={self.channels}, dwell={self.dwell_ms}ms)")
         hop_thread = threading.Thread(target=self._channel_hopper, daemon=True)
         hop_thread.start()
 
@@ -97,10 +131,10 @@ class WiFiNANScanner:
                     lfilter=self._is_action_frame,
                 )
             except OSError as e:
-                log.error(f"Sniff error on {self.iface}: {e} — retrying in 5 s")
+                log.error(f"[{self._label}] Sniff error on {self.iface}: {e} — retrying in 5 s")
                 time.sleep(5)
 
-        log.info("Wi-Fi NAN scanner stopped.")
+        log.info(f"[{self._label}] Scanner stopped.")
 
     # ------------------------------------------------------------------ #
     # Internal
@@ -158,7 +192,10 @@ class WiFiNANScanner:
                 continue
             self._seen[frame.drone_id] = now
 
-            log.info(f"RID via WiFi  id={frame.drone_id}  rssi={rssi} dBm  {frame.lat:.5f},{frame.lon:.5f}")
+            log.info(
+                f"[{self._label}] RID id={frame.drone_id}  "
+                f"rssi={rssi} dBm  {frame.lat:.5f},{frame.lon:.5f}"
+            )
 
             self.publisher.publish_detection(
                 node_id=self.node_id,
@@ -169,6 +206,7 @@ class WiFiNANScanner:
                 node_lat=self.gps.lat,
                 node_lon=self.gps.lon,
                 node_alt=self.gps.alt,
+                band=self.band,
             )
 
     def _extract_rssi(self, pkt) -> int:
@@ -185,11 +223,11 @@ class WiFiNANScanner:
 
     def _channel_hopper(self):
         """
-        Cycle through Wi-Fi channels every 250 ms.
-        Remote ID typically uses ch6 but hopping ensures we catch everything.
+        Cycle through Wi-Fi channels every dwell_ms milliseconds.
+        Remote ID typically uses ch6 (2.4 GHz) but hopping ensures we catch everything.
         """
-        import subprocess
         idx = 0
+        dwell_s = self.dwell_ms / 1000.0
         while not self.stop_event.is_set():
             ch = self.channels[idx % len(self.channels)]
             try:
@@ -201,4 +239,4 @@ class WiFiNANScanner:
             except Exception:
                 pass
             idx += 1
-            time.sleep(0.25)
+            time.sleep(dwell_s)
