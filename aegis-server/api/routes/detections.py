@@ -54,7 +54,7 @@ async def get_drone_history(
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT detected_at, node_id, transport, rssi,
+            SELECT detected_at, node_id, transport, band, rssi,
                    drone_lat AS lat, drone_lon AS lon,
                    alt_baro, height_agl, speed_h, speed_v, heading, status
             FROM detections
@@ -80,7 +80,7 @@ async def list_detections(
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT id, detected_at, node_id, transport, rssi,
+            SELECT id, detected_at, node_id, transport, band, rssi,
                    drone_id, drone_lat, drone_lon, alt_baro, height_agl,
                    speed_h, heading, status, operator_id
             FROM detections
