@@ -34,7 +34,7 @@ const css = `
 }
 .pf-cols {
   display: grid;
-  grid-template-columns: 68px 58px 44px 1fr;
+  grid-template-columns: 68px 58px 44px 38px 1fr;
   gap: 0 10px;
   padding: 4px 14px;
   border-bottom: 1px solid var(--border);
@@ -52,7 +52,7 @@ const css = `
 }
 .pf-row {
   display: grid;
-  grid-template-columns: 68px 58px 44px 1fr;
+  grid-template-columns: 68px 58px 44px 38px 1fr;
   gap: 0 10px;
   padding: 2px 14px;
   font-family: var(--mono);
@@ -68,6 +68,22 @@ const css = `
 .pf-type  {}
 .pf-wifi  { color: var(--ice); }
 .pf-bt    { color: #b39ddb; }
+.pf-band  {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-family: var(--mono);
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0;
+  line-height: 1.4;
+  white-space: nowrap;
+  align-self: center;
+}
+.pf-band-24  { background: rgba(30,120,200,0.25); color: #64b5f6; }
+.pf-band-5   { background: rgba(130,60,200,0.25); color: #ce93d8; }
+.pf-band-unk { background: rgba(80,80,80,0.2);    color: var(--muted); }
 .pf-data  { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-drone { color: var(--text); }
 `
@@ -97,6 +113,7 @@ export default function PacketFeed() {
           <span>Time</span>
           <span>Node</span>
           <span>Radio</span>
+          <span>Band</span>
           <span>Data</span>
         </div>
         <div className="pf-feed" ref={feedRef}>
@@ -117,6 +134,12 @@ export default function PacketFeed() {
                 <span className="pf-node">{pkt.node_id}</span>
                 <span className={`pf-type ${pkt.transport === 'wifi_nan' ? 'pf-wifi' : 'pf-bt'}`}>
                   {pkt.transport === 'wifi_nan' ? 'WiFi' : 'BT'}
+                </span>
+                <span className={`pf-band ${
+                  pkt.band === '2.4' ? 'pf-band-24' :
+                  pkt.band === '5'   ? 'pf-band-5'  : 'pf-band-unk'
+                }`}>
+                  {pkt.band ?? '—'}
                 </span>
                 <span className="pf-data">
                   <span className="pf-drone">{pkt.drone_id}</span>
