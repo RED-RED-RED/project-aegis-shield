@@ -44,6 +44,7 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 - [Calibration](#calibration)
 - [AEGIS Shield](#aegis-shield)
 - [API Reference](#api-reference)
+- [Integrations](#integrations)
 - [Threat Scoring](#threat-scoring)
 - [MLAT / Trilateration](#mlat--trilateration)
 - [Troubleshooting](#troubleshooting)
@@ -442,6 +443,47 @@ GET  /api/analysis/stats                High/medium counts, spoofed count, avera
 | `detection` | Per detection | Single detection for packet feed |
 | `alert` | Per alert | New alert object |
 | `node_update` | Per heartbeat | Node status + health metrics |
+
+---
+
+## Integrations
+
+### Algo 8128 IP Visual Alerter
+
+AEGIS Server can trigger a strobe flash on an [Algo 8128](https://www.algosolutions.com/product/8128/) IP Visual Alerter when drone threat levels change. The integration is **disabled by default** — zero overhead when off.
+
+**Enable it** by adding these vars to `aegis-server/docker/.env`:
+
+```env
+ALGO_8128_ENABLED=true
+ALGO_8128_URL=http://192.168.1.50      # IP address of the Algo 8128 unit
+ALGO_8128_API_KEY=your-algo-api-key
+ALGO_8128_COOLDOWN_SECONDS=30          # minimum seconds between triggers for the same drone
+```
+
+**Flash pattern mapping:**
+
+| Threat level | Pattern | Intensity |
+|---|---|---|
+| LOW | 1 | 1 |
+| MEDIUM | 5 | 2 |
+| HIGH | 9 | 3 |
+
+**Trigger logic:**
+
+- Fires on escalation: LOW → MEDIUM, MEDIUM → HIGH, or any new HIGH detection.
+- Same-or-lower level re-triggers are suppressed within the cooldown window (default 30 s).
+- Escalations always bypass the cooldown.
+- A `stop` command is sent to the device when the threat clears.
+
+**AEGIS Shield** shows the integration status in the topbar as a small indicator dot (green = reachable, grey = disabled, red = unreachable). Clicking it fires a test flash — pattern 3, intensity 2, 5 s duration — so you can verify connectivity without needing a live drone detection.
+
+**API endpoints:**
+
+```
+GET  /api/integrations/algo/status   Enabled state, configured URL, last trigger timestamp + level
+POST /api/integrations/algo/test     Fire a test flash; returns { success, latency_ms }
+```
 
 ---
 
