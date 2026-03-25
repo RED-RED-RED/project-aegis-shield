@@ -8,6 +8,7 @@ All fields have sensible defaults for a Pi Zero 2W with standard hardware.
 import os
 import socket
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -15,6 +16,8 @@ import yaml
 
 
 CONFIG_PATH = Path(os.environ.get("ARGUS_CONFIG", "/etc/argus-node/config.yaml"))
+
+_cfg_log = logging.getLogger("config")
 
 
 @dataclass
@@ -38,9 +41,22 @@ class NodeConfig:
     gps_auto_detect: bool = True   # scan candidate ports if configured port not found
 
     # ---- Wi-Fi NAN ----
+    # Primary adapter — 2.4 GHz
+    wifi_enabled_2g: bool = True
+    wifi_interface_2g: str = "wlan1"
+    wifi_channels_2g: list = field(default_factory=lambda: [1, 6, 11])
+    wifi_dwell_ms_2g: int = 200
+
+    # Secondary adapter — 5 GHz (disabled by default; opt-in when second adapter present)
+    wifi_enabled_5g: bool = False
+    wifi_interface_5g: str = "wlan2"
+    wifi_channels_5g: list = field(default_factory=lambda: [36, 40, 44, 48, 149, 153, 157, 161])
+    wifi_dwell_ms_5g: int = 200
+
+    # Deprecated — kept for backward compatibility only; use interface_2g / enabled_2g
     wifi_enabled: bool = True
-    wifi_iface: str = "wlan1mon"         # Must already be in monitor mode
-    wifi_channel: int = 6                # Remote ID uses ch6 by default; also scan ch1, ch11
+    wifi_iface: str = ""
+    wifi_channel: int = 6
 
     # ---- Bluetooth ----
     bt_enabled: bool = True
@@ -84,7 +100,33 @@ def load_config() -> NodeConfig:
             setattr(cfg, section, values)
 
     _apply_env(cfg)
+    _apply_wifi_backward_compat(cfg, data)
     return cfg
+
+
+
+def _apply_wifi_backward_compat(cfg: NodeConfig, data: dict):
+    """
+    Map legacy wifi.iface / wifi.enabled keys to the new dual-adapter fields.
+    Old configs continue to work without modification.
+    """
+    wifi = data.get("wifi", {})
+    if not isinstance(wifi, dict):
+        return
+
+    # Detect old single-adapter config by presence of legacy keys
+    has_legacy_iface   = "iface" in wifi
+    has_legacy_enabled = "enabled" in wifi
+    has_new_iface      = "interface_2g" in wifi
+
+    if has_legacy_iface and not has_new_iface:
+        _cfg_log.warning(
+            "wifi.iface is deprecated — replace with wifi.interface_2g in your config"
+        )
+        cfg.wifi_interface_2g = wifi["iface"]
+
+    if has_legacy_enabled and "enabled_2g" not in wifi:
+        cfg.wifi_enabled_2g = wifi["enabled"]
 
 
 def _apply_env(cfg: NodeConfig):
