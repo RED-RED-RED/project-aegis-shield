@@ -42,18 +42,18 @@ const css = `
   position: relative;
 }
 .arch-box:hover {
-  border-color: var(--amber-dim);
-  box-shadow: 0 0 12px var(--amber-glow);
+  border-color: var(--steel-blue-dim);
+  box-shadow: 0 0 12px rgba(74,111,165,0.1);
 }
 .arch-box.server {
-  border-color: var(--amber-dim);
-  background: rgba(232,160,32,0.04);
-  box-shadow: 0 0 16px rgba(232,160,32,0.08);
+  border-color: var(--steel-blue-dim);
+  background: rgba(74,111,165,0.04);
+  box-shadow: 0 0 16px rgba(74,111,165,0.08);
   min-width: 380px;
 }
 .arch-box.node {
-  border-color: #4a2c6a;
-  background: rgba(179,157,219,0.04);
+  border-color: var(--olive-dim);
+  background: rgba(74,124,89,0.04);
   min-width: 130px;
 }
 .arch-box.radio {
@@ -79,7 +79,7 @@ const css = `
 .arch-arrow {
   width: 1px;
   height: 28px;
-  background: linear-gradient(var(--amber-dim), #4a2c6a);
+  background: linear-gradient(var(--steel-blue-dim), var(--olive-dim));
   margin: 0 auto;
   position: relative;
 }
@@ -88,8 +88,8 @@ const css = `
   position: absolute;
   bottom: -4px; left: -3px;
   width: 7px; height: 7px;
-  border-right: 1px solid #4a2c6a;
-  border-bottom: 1px solid #4a2c6a;
+  border-right: 1px solid var(--olive-dim);
+  border-bottom: 1px solid var(--olive-dim);
   transform: rotate(45deg);
 }
 .arch-nodes-row {
@@ -111,7 +111,7 @@ const css = `
 }
 .arch-radio-arrow {
   width: 1px; height: 16px;
-  background: #4a2c6a;
+  background: var(--olive-dim);
   margin: 0 auto;
 }
 .arch-label {
@@ -137,7 +137,7 @@ const css = `
   margin: 0 auto;
 }
 .ck { color: var(--ice); }
-.cv { color: var(--phosphor); }
+.cv { color: var(--olive); }
 .cs { color: var(--amber); }
 .cm { color: var(--muted); }
 .arch-section-label {
@@ -180,9 +180,9 @@ const css = `
   margin-bottom: 3px;
 }
 .fs-amber { color: var(--amber); }
-.fs-purple { color: #b39ddb; }
+.fs-purple { color: var(--steel-blue-light); }
 .fs-ice { color: var(--ice); }
-.fs-green { color: var(--phosphor); }
+.fs-green { color: var(--olive); }
 .flow-arrow-cell {
   width: 20px;
   text-align: center;
@@ -260,7 +260,7 @@ export default function ArchView() {
                 <div className="arch-radios-row">
                   {node.radios.map((r, i) => (
                     <div key={i} className="arch-box radio">
-                      <div className="arch-box-title" style={{fontSize:9,color: i===0?'var(--ice)':i===1?'#b39ddb':'var(--amber)'}}>
+                      <div className="arch-box-title" style={{fontSize:9,color: i===0?'var(--ice)':i===1?'var(--steel-blue-light)':'var(--olive)'}}>
                         {r.split('\n')[0]}
                       </div>
                       <div className="arch-box-sub" style={{fontSize:8}}>
