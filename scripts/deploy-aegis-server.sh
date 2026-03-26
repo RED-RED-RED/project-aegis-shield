@@ -266,7 +266,7 @@ Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 | Service | Username | Password |
 |---|---|---|
-| Database | aegis | ${DB_PASS} |
+| Database | ridmesh | ${DB_PASS} |
 | MQTT | rid | ${MQTT_PASS} |
 
 ## ARGUS Node Configuration
