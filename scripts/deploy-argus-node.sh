@@ -154,8 +154,13 @@ ok "Packages installed"
 # ── 2/8  Hardware configuration ──────────────────────────────────────────
 step 2 "Hardware configuration"
 
-# RTL-SDR: blacklist DVB driver, add udev rule
+# RTL-SDR: blacklist DVB drivers so the dongle is claimed by rtl-sdr, not the
+# kernel DVB stack.  Both modules must be listed — rtl2832 is the demodulator
+# that dvb_usb_rtl28xxu depends on; blacklisting only one leaves the other
+# able to load.  modprobe -r evicts any already-loaded instance immediately.
 echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/rtl-sdr-blacklist.conf
+echo "blacklist rtl2832"         >> /etc/modprobe.d/rtl-sdr-blacklist.conf
+modprobe -r dvb_usb_rtl28xxu 2>/dev/null || true
 cat > /etc/udev/rules.d/20-rtlsdr.rules << 'UDEV'
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", \
   GROUP="plugdev", MODE="0666", SYMLINK+="rtl_sdr"
