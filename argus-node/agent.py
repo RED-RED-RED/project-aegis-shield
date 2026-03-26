@@ -74,7 +74,12 @@ def main():
     publisher.connect()
 
     # ---- GPS daemon (runs in background, updates shared position) ----
-    gps = GPSDaemon(cfg.gps_serial_port, cfg.gps_baud)
+    gps = GPSDaemon(
+        cfg.gps_serial_port,
+        cfg.gps_baud,
+        mode=cfg.gps_mode,
+        auto_detect=cfg.gps_auto_detect,
+    )
     gps_thread = threading.Thread(target=gps.run, args=(_stop_event,), daemon=True)
     gps_thread.start()
 
