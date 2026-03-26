@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from publisher.gps import (
     GPSDaemon,
+    _probe_port,
     build_ubx,
     build_ubx_cfg_msg,
     build_ubx_cfg_tmode3_svin,
@@ -35,7 +36,7 @@ from publisher.gps import (
     _ecef_to_llh,
     UBX_SYNC1, UBX_SYNC2,
     UBX_CLASS_NAV, UBX_CLASS_CFG,
-    UBX_CFG_MSG, UBX_CFG_TMODE3,
+    UBX_CFG_MSG, UBX_CFG_PRT, UBX_CFG_TMODE3,
     UBX_NAV_STATUS, UBX_NAV_SVIN,
     SVIN_MIN_DUR_S, SVIN_ACC_LIMIT_01MM,
 )
@@ -420,3 +421,103 @@ class TestGPSDaemonHeartbeatExtras:
         assert extras["jamming_state"]   is None
         assert extras["spoofing_state"]  is None
         assert extras["survey_complete"] is False
+
+
+# ── GPS config passthrough (Bug 1 regression) ──────────────────────────────
+
+class TestGPSDaemonConfigPassthrough:
+    """
+    Verify that GPSDaemon correctly stores auto_detect and mode when passed
+    explicitly — these are the values agent.py now forwards from NodeConfig.
+    """
+
+    def test_auto_detect_false_stored(self):
+        """GPSDaemon stores auto_detect=False as passed from config."""
+        d = GPSDaemon(port="/dev/ttyACM0", baud=38400, mode="usb", auto_detect=False)
+        assert d.auto_detect is False
+
+    def test_auto_detect_true_stored(self):
+        """GPSDaemon stores auto_detect=True as passed from config."""
+        d = GPSDaemon(port="/dev/ttyACM0", baud=38400, mode="usb", auto_detect=True)
+        assert d.auto_detect is True
+
+    def test_mode_usb_stored(self):
+        """GPSDaemon stores mode='usb' as passed from config."""
+        d = GPSDaemon(port="/dev/ttyACM0", baud=38400, mode="usb", auto_detect=False)
+        assert d.mode == "usb"
+
+    def test_mode_uart_stored(self):
+        """GPSDaemon stores mode='uart' as passed from config."""
+        d = GPSDaemon(port="/dev/ttyAMA0", baud=9600, mode="uart", auto_detect=False)
+        assert d.mode == "uart"
+
+
+# ── _probe_port UBX-CFG-PRT injection (Bug 2 regression) ──────────────────
+
+class TestProbePortUBXCFGPRT:
+    """
+    Verify that _probe_port sends UBX-CFG-PRT before attempting to read NMEA,
+    and that it correctly handles a NEO-M9N returning UBX binary before NMEA.
+    """
+
+    _GGA = "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47"
+
+    def _make_serial(self, readline_returns):
+        mock_ser = MagicMock()
+        mock_ser.__enter__ = MagicMock(return_value=mock_ser)
+        mock_ser.__exit__  = MagicMock(return_value=False)
+        mock_ser.readline.side_effect = [
+            (line + "\r\n").encode("ascii") if isinstance(line, str) else line
+            for line in readline_returns
+        ]
+        return mock_ser
+
+    def test_write_called_before_readline(self):
+        """UBX-CFG-PRT write happens before the first readline attempt."""
+        mock_ser = self._make_serial([self._GGA])
+        with patch("publisher.gps.serial.Serial", return_value=mock_ser), \
+             patch("publisher.gps.time.sleep"):
+            _probe_port("/dev/ttyACM0", 38400)
+
+        call_names = [c[0] for c in mock_ser.method_calls]
+        assert "write" in call_names
+        assert "readline" in call_names
+        assert call_names.index("write") < call_names.index("readline")
+
+    def test_write_sends_ubx_cfg_prt_for_usb_port(self):
+        """Written frame is UBX-CFG-PRT with portID=3 and outProtoMask=3."""
+        mock_ser = self._make_serial([self._GGA])
+        with patch("publisher.gps.serial.Serial", return_value=mock_ser), \
+             patch("publisher.gps.time.sleep"):
+            _probe_port("/dev/ttyACM0", 38400)
+
+        frame = mock_ser.write.call_args_list[0][0][0]
+        assert frame[2] == UBX_CLASS_CFG
+        assert frame[3] == UBX_CFG_PRT
+        payload = frame[6:-2]
+        port_id, _, _, _, _, in_proto, out_proto, _, _ = struct.unpack("<BBHIIHHHH", payload)
+        assert port_id   == 3   # USB
+        assert out_proto == 3   # UBX+NMEA
+
+    def test_returns_true_when_nmea_follows_ubx_binary(self):
+        """Returns True when NMEA appears after initial UBX binary garbage."""
+        mock_ser = self._make_serial([
+            b"\xb5\x62\x01\x03\x10\x00garbage_ubx_binary",  # UBX frame
+            self._GGA,                                        # valid NMEA follows
+        ])
+        with patch("publisher.gps.serial.Serial", return_value=mock_ser), \
+             patch("publisher.gps.time.sleep"):
+            result = _probe_port("/dev/ttyACM0", 38400)
+
+        assert result is True
+
+    def test_reset_input_buffer_called_after_sleep(self):
+        """Input buffer is flushed after the 500ms wait to clear UBX binary."""
+        mock_ser = self._make_serial([self._GGA])
+        with patch("publisher.gps.serial.Serial", return_value=mock_ser), \
+             patch("publisher.gps.time.sleep"):
+            _probe_port("/dev/ttyACM0", 38400)
+
+        call_names = [c[0] for c in mock_ser.method_calls]
+        assert "reset_input_buffer" in call_names
+        assert call_names.index("reset_input_buffer") < call_names.index("readline")
