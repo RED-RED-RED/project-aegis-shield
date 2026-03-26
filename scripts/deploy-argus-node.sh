@@ -243,7 +243,7 @@ wifi:
 
 bt:
   enabled: true
-  hci_index: 0
+  hci_index: 1              # nRF52840 dongle — Pi onboard BT is hci0
   coded_phy: true
 
 sdr:
