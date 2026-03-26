@@ -12,7 +12,6 @@ set -euo pipefail
 
 WIFI_IFACE_2G="wlan1"    # Primary adapter — 2.4 GHz
 WIFI_IFACE_5G="wlan2"    # Secondary adapter — 5 GHz (optional)
-BT_HCI="hci0"
 
 # ---- Helper: put an interface into monitor mode ----
 setup_monitor() {
@@ -31,8 +30,10 @@ setup_monitor() {
     fi
 }
 
-# Unblock Wi-Fi in case rfkill is blocking the adapter
-rfkill unblock wifi 2>/dev/null || true
+# Unblock all RF devices (WiFi + Bluetooth) in one pass.
+# rfkill unblock wifi alone is insufficient on first boot — the nRF52840 dongle
+# can come up RF-killed and hciconfig up will silently fail without this.
+rfkill unblock all 2>/dev/null || true
 
 # Kill anything that might interfere (NetworkManager, wpa_supplicant)
 airmon-ng check kill 2>/dev/null || true
@@ -50,8 +51,19 @@ else
 fi
 
 # ---- Bluetooth ----
+# Prefer the nRF52840 USB dongle (hci1) over the Pi's onboard adapter (hci0).
+# The nRF52840 is required for BT5 Long Range (Coded PHY).  If the dongle is
+# absent we fall back to hci0 so the service still starts in degraded mode.
+if hciconfig hci1 2>/dev/null | grep -q "hci1"; then
+    BT_HCI="hci1"
+    echo "[setup] nRF52840 dongle detected — using hci1"
+else
+    BT_HCI="hci0"
+    echo "[setup] hci1 not found — falling back to onboard hci0 (no Coded PHY)"
+fi
+
 echo "[setup] Bringing up Bluetooth $BT_HCI"
-hciconfig "$BT_HCI" up 2>/dev/null || { rfkill unblock bluetooth && hciconfig "$BT_HCI" up; }
+hciconfig "$BT_HCI" up 2>/dev/null || true
 
 # Disable page scan / inquiry scan (we're passive only)
 hciconfig "$BT_HCI" noscan 2>/dev/null || true
