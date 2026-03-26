@@ -161,6 +161,7 @@ step 2 "Hardware configuration"
 echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/rtl-sdr-blacklist.conf
 echo "blacklist rtl2832"         >> /etc/modprobe.d/rtl-sdr-blacklist.conf
 modprobe -r dvb_usb_rtl28xxu 2>/dev/null || true
+modprobe -r rtl2832            2>/dev/null || true
 cat > /etc/udev/rules.d/20-rtlsdr.rules << 'UDEV'
 SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", \
   GROUP="plugdev", MODE="0666", SYMLINK+="rtl_sdr"
@@ -212,6 +213,17 @@ python3 -m venv "$INSTALL_DIR/venv" --upgrade-deps
 "$INSTALL_DIR/venv/bin/pip" install \
   -r "$INSTALL_DIR/argus-node/requirements.txt" -q
 ok "Python dependencies installed"
+
+# pyrtlsdr 0.2.x uses a bare 'import pkg_resources' which is absent from
+# Python 3.13 venvs by default.  Patch it in-place; idempotent if already done.
+bash "$INSTALL_DIR/scripts/patch-pyrtlsdr.sh" "$INSTALL_DIR/venv"
+
+# Confirm pyrtlsdr imports cleanly before the node starts.
+# librtlsdr.so must be present (installed above in step 1).
+if ! "$INSTALL_DIR/venv/bin/python" -c "import rtlsdr" 2>/dev/null; then
+  fail "pyrtlsdr failed to import — check librtlsdr-dev is installed and the patch ran cleanly"
+fi
+ok "RTL-SDR Python binding OK"
 
 # ── 5/8  Configuration ────────────────────────────────────────────────────
 step 5 "Writing node configuration"
