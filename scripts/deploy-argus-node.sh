@@ -132,7 +132,7 @@ GPS_MODE="${GPS_MODE:-usb}"
 echo ""
 info "Node ID    : ${BOLD}${NODE_ID}${NC}"
 info "Server     : ${BOLD}${SERVER_IP}${NC}"
-info "Wi-Fi 2.4G : ${WIFI_IFACE}mon"
+info "Wi-Fi 2.4G : ${WIFI_IFACE}"
 info "Wi-Fi 5G   : ${WIFI_IFACE_5G:-(not fitted)}"
 info "SDR        : ${SDR_STR}"
 info "GPS mode   : ${GPS_MODE}"
@@ -233,7 +233,7 @@ gps:
   # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
   baud: 38400
   mode: "${GPS_MODE}"
-  auto_detect: true
+  auto_detect: false         # set true only if port assignment is unknown
 
 wifi:
   enabled_2g: true
