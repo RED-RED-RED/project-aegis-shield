@@ -220,9 +220,32 @@ def _probe_port(port: str, baud: int, timeout: float = 3.0) -> bool:
     """
     Open port and attempt to read at least one valid NMEA sentence within
     timeout seconds. Returns True if NMEA is flowing.
+
+    Sends UBX-CFG-PRT to enable NMEA output on the USB port before reading.
+    This is required for the NEO-M9N, which defaults to UBX-only binary
+    output on USB and will not emit NMEA sentences until switched.
     """
     try:
         with serial.Serial(port, baud, timeout=1.0) as ser:
+            # Enable NMEA output on USB port (portID=3).  The NEO-M9N powers
+            # up in UBX-only mode on USB; without this the probe loop reads
+            # binary garbage and never finds a valid NMEA sentence.
+            cfg_prt_payload = struct.pack(
+                "<BBHIIHHHH",
+                3,    # portID: USB
+                0,    # reserved
+                0,    # txReady
+                0,    # mode (unused for USB)
+                0,    # baudRate (unused for USB)
+                7,    # inProtoMask: UBX+NMEA+RTCM
+                3,    # outProtoMask: UBX+NMEA
+                0,    # flags
+                0,    # reserved2
+            )
+            ser.write(build_ubx(UBX_CLASS_CFG, UBX_CFG_PRT, cfg_prt_payload))
+            time.sleep(0.5)
+            ser.reset_input_buffer()
+
             deadline = time.time() + timeout
             while time.time() < deadline:
                 try:
