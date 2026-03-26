@@ -44,7 +44,7 @@ wifi:
 # ---- Bluetooth (nRF52840 dongle) ----
 bt:
   enabled: true
-  hci_index: 0              # hci0
+  hci_index: 1              # nRF52840 USB dongle — Pi onboard BT enumerates as hci0
   coded_phy: true           # BT5 Long Range — disable if dongle doesn't support it
 
 # ---- RTL-SDR (optional) ----
