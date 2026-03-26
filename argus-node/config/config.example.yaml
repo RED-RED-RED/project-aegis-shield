@@ -22,9 +22,9 @@ mqtt:
 gps:
   serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
   # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
-  baud: 9600
+  baud: 38400                    # NEO-M9N USB default — NOT 9600
   mode: "usb"                   # "usb" or "uart"
-  auto_detect: true             # scan common ports if configured port not found
+  auto_detect: false             # set true only if port assignment is unknown
 
 # ---- Wi-Fi NAN (Alfa AWUS036ACM) ----
 wifi:
