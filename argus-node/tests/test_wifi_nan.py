@@ -16,7 +16,12 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from unittest.mock import MagicMock, patch
-from scanner.wifi_nan import WiFiNANScanner, _CHANNELS_2G, _CHANNELS_5G
+from scanner.wifi_nan import (
+    WiFiNANScanner,
+    _CHANNELS_2G, _CHANNELS_5G,
+    RID_BEACON_OUI_ASTM, RID_BEACON_OUI_ODID, RID_BEACON_IE_TYPE,
+    WIFI_IE_VENDOR_SPECIFIC,
+)
 from config.settings import NodeConfig, load_config
 
 
@@ -297,3 +302,299 @@ class TestBackwardCompat:
                 os.environ["ARGUS_CONFIG"] = old_env
 
         assert cfg.wifi_enabled_5g is False
+
+
+# ------------------------------------------------------------------ #
+# Wi-Fi Beacon Remote ID detection
+# ------------------------------------------------------------------ #
+
+def _make_ie_chain(ies):
+    """
+    Build a linked list of mock 802.11 IE objects.
+
+    ies — list of (element_id, info_bytes) tuples ordered as they appear
+          in the Beacon frame body.
+
+    The chain terminates with an object that has no 'ID' attribute, which
+    causes _extract_beacon_rid_payload's hasattr(elt.payload, 'ID') loop
+    guard to stop iteration — matching the scapy NoPayload sentinel.
+    """
+    class _Terminus:
+        """Sentinel: no ID attribute, so hasattr check returns False."""
+
+    if not ies:
+        return None
+
+    nodes = []
+    for ie_id, info in ies:
+        m = MagicMock()
+        m.ID   = ie_id
+        m.info = info
+        nodes.append(m)
+
+    for i in range(len(nodes) - 1):
+        nodes[i].payload = nodes[i + 1]
+    nodes[-1].payload = _Terminus()
+
+    return nodes[0]
+
+
+def _make_rid_ie_info(oui=None, ie_type=None, rid_data=None):
+    """Build the raw bytes for a vendor-specific IE body containing Remote ID."""
+    oui      = oui      or RID_BEACON_OUI_ASTM
+    ie_type  = ie_type  if ie_type is not None else RID_BEACON_IE_TYPE
+    rid_data = rid_data or (b"\x00" * 25)
+    return oui + bytes([ie_type]) + rid_data
+
+
+def _beacon_pkt(ie_chain, src_mac="aa:bb:cc:dd:ee:ff", rssi=-65):
+    """Return a minimal mock 802.11 Beacon packet for use in unit tests."""
+    from scapy.all import Dot11, RadioTap
+
+    dot11 = MagicMock()
+    dot11.subtype = 8
+    dot11.addr2   = src_mac
+
+    def getitem(layer):
+        if layer is Dot11:    return dot11
+        if layer is RadioTap: return MagicMock(dBm_AntSignal=rssi)
+        return MagicMock()
+
+    pkt = MagicMock()
+    pkt.haslayer.return_value = True
+    pkt.__getitem__ = MagicMock(side_effect=getitem)
+    pkt.getlayer.return_value = ie_chain
+    return pkt
+
+
+class TestBeaconDetection:
+
+    # ── _extract_beacon_rid_payload ────────────────────────────────────────
+
+    def test_extract_returns_payload_for_astm_oui(self):
+        """Vendor-specific IE with ASTM OUI returns the RID payload bytes."""
+        scanner, _ = _make_scanner()
+        rid_bytes   = b"\xF0" * 25
+        ie_chain    = _make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info(oui=RID_BEACON_OUI_ASTM, rid_data=rid_bytes)),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        result = scanner._extract_beacon_rid_payload(pkt)
+        assert result == rid_bytes
+
+    def test_extract_returns_payload_for_odid_oui(self):
+        """OpenDroneID alternative OUI (ESP32 uav_electronic_ids) also accepted."""
+        scanner, _ = _make_scanner()
+        rid_bytes   = b"\xAB" * 25
+        ie_chain    = _make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info(oui=RID_BEACON_OUI_ODID, rid_data=rid_bytes)),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        result = scanner._extract_beacon_rid_payload(pkt)
+        assert result == rid_bytes
+
+    def test_extract_skips_non_vendor_ie_and_finds_rid(self):
+        """Non-vendor IEs before the Remote ID IE are skipped."""
+        scanner, _ = _make_scanner()
+        rid_bytes   = b"\x12" * 25
+        ie_chain    = _make_ie_chain([
+            (0,   b"SSID-bytes"),             # SSID IE (not vendor-specific)
+            (1,   b"\x82\x84\x8b\x96"),       # Supported Rates IE
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info(rid_data=rid_bytes)),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        result = scanner._extract_beacon_rid_payload(pkt)
+        assert result == rid_bytes
+
+    def test_extract_returns_none_for_wrong_oui(self):
+        """Vendor-specific IE with an unrecognised OUI is not treated as RID."""
+        scanner, _ = _make_scanner()
+        ie_chain = _make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, bytes([0x00, 0x50, 0xF2, 0x01]) + b"\x00" * 25),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        assert scanner._extract_beacon_rid_payload(pkt) is None
+
+    def test_extract_returns_none_for_wrong_ie_type_byte(self):
+        """Correct OUI but wrong OUI-type byte (not 0x0D) is rejected."""
+        scanner, _ = _make_scanner()
+        ie_chain = _make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info(ie_type=0x01)),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        assert scanner._extract_beacon_rid_payload(pkt) is None
+
+    def test_extract_returns_none_when_no_vendor_ie(self):
+        """Beacon with no vendor-specific IE at all returns None."""
+        scanner, _ = _make_scanner()
+        ie_chain = _make_ie_chain([
+            (0, b"my-ssid"),
+            (1, b"\x82\x84"),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+        assert scanner._extract_beacon_rid_payload(pkt) is None
+
+    def test_extract_returns_none_for_empty_ie_chain(self):
+        """getlayer(Dot11Elt) returning None (no IEs at all) is handled safely."""
+        scanner, _ = _make_scanner()
+        pkt = _beacon_pkt(None)
+        assert scanner._extract_beacon_rid_payload(pkt) is None
+
+    # ── _process_beacon end-to-end ─────────────────────────────────────────
+
+    def test_beacon_rid_publishes_detection(self):
+        """A Beacon with a valid RID IE calls publish_detection once."""
+        scanner, _ = _make_scanner(band="2.4")
+        rid_frame = MagicMock()
+        rid_frame.drone_id = "BEACON-DRONE-01"
+        rid_frame.lat = 42.0
+        rid_frame.lon = -71.0
+        rid_frame.timestamp = time.time()
+
+        ie_chain = _make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info()),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+
+        with patch.object(scanner, "_extract_beacon_rid_payload", return_value=b"\x00" * 25), \
+             patch.object(scanner._parser, "parse", return_value=[rid_frame]):
+            scanner._process_beacon(pkt)
+
+        scanner.publisher.publish_detection.assert_called_once()
+
+    def test_beacon_rid_tagged_as_wifi_beacon(self):
+        """publish_detection receives transport='wifi_beacon' for Beacon frames."""
+        scanner, _ = _make_scanner(band="2.4")
+        rid_frame = MagicMock()
+        rid_frame.drone_id = "BEACON-DRONE-02"
+        rid_frame.lat = 42.0
+        rid_frame.lon = -71.0
+        rid_frame.timestamp = time.time()
+
+        pkt = _beacon_pkt(_make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info()),
+        ]))
+
+        with patch.object(scanner, "_extract_beacon_rid_payload", return_value=b"\x00" * 25), \
+             patch.object(scanner._parser, "parse", return_value=[rid_frame]):
+            scanner._process_beacon(pkt)
+
+        kwargs = scanner.publisher.publish_detection.call_args.kwargs
+        assert kwargs["transport"] == "wifi_beacon"
+
+    def test_nan_detection_tagged_as_wifi_nan(self):
+        """Existing NAN Action frame path still tags detections as 'wifi_nan'."""
+        scanner, _ = _make_scanner(band="2.4")
+        rid_frame = MagicMock()
+        rid_frame.drone_id = "NAN-DRONE-01"
+        rid_frame.lat = 42.0
+        rid_frame.lon = -71.0
+        rid_frame.timestamp = time.time()
+
+        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
+
+        from scapy.all import Dot11, RadioTap, Raw
+        dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
+
+        def getitem(layer):
+            if layer is Dot11:    return dot11
+            if layer is RadioTap: return MagicMock(dBm_AntSignal=-70)
+            if layer is Raw:      return MagicMock()
+            return MagicMock()
+
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(side_effect=getitem)
+
+        with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
+             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+            scanner._process(pkt)
+
+        kwargs = scanner.publisher.publish_detection.call_args.kwargs
+        assert kwargs["transport"] == "wifi_nan"
+
+    def test_beacon_without_rid_ie_does_not_publish(self):
+        """A Beacon with no Remote ID IE must not call publish_detection."""
+        scanner, _ = _make_scanner()
+        ie_chain = _make_ie_chain([
+            (0, b"my-network"),
+            (1, b"\x82\x84\x8b\x96"),
+        ])
+        pkt = _beacon_pkt(ie_chain)
+
+        # _extract_beacon_rid_payload will return None → no publication
+        scanner._process_beacon(pkt)
+
+        scanner.publisher.publish_detection.assert_not_called()
+
+    def test_handle_packet_routes_beacon_subtype_to_process_beacon(self):
+        """_handle_packet dispatches subtype-8 frames to _process_beacon."""
+        scanner, _ = _make_scanner()
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(return_value=MagicMock(subtype=8))
+
+        with patch.object(scanner, "_process_beacon") as mock_beacon, \
+             patch.object(scanner, "_process") as mock_nan:
+            scanner._handle_packet(pkt)
+
+        mock_beacon.assert_called_once_with(pkt)
+        mock_nan.assert_not_called()
+
+    def test_handle_packet_routes_action_subtype_to_process_nan(self):
+        """_handle_packet dispatches non-Beacon frames to _process (NAN path)."""
+        scanner, _ = _make_scanner()
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(return_value=MagicMock(subtype=13))
+
+        with patch.object(scanner, "_process_beacon") as mock_beacon, \
+             patch.object(scanner, "_process") as mock_nan:
+            scanner._handle_packet(pkt)
+
+        mock_nan.assert_called_once_with(pkt)
+        mock_beacon.assert_not_called()
+
+    def test_beacon_band_passed_to_publish_detection(self):
+        """Beacon detections include the correct band in publish_detection call."""
+        scanner, _ = _make_scanner(band="5", iface="wlan2")
+        rid_frame = MagicMock()
+        rid_frame.drone_id = "BEACON-DRONE-05G"
+        rid_frame.lat = 42.0
+        rid_frame.lon = -71.0
+        rid_frame.timestamp = time.time()
+
+        pkt = _beacon_pkt(_make_ie_chain([
+            (WIFI_IE_VENDOR_SPECIFIC, _make_rid_ie_info()),
+        ]))
+
+        with patch.object(scanner, "_extract_beacon_rid_payload", return_value=b"\x00" * 25), \
+             patch.object(scanner._parser, "parse", return_value=[rid_frame]):
+            scanner._process_beacon(pkt)
+
+        kwargs = scanner.publisher.publish_detection.call_args.kwargs
+        assert kwargs["band"] == "5"
+
+    def test_is_rid_frame_accepts_beacon_subtype(self):
+        """_is_rid_frame passes 802.11 management frames with subtype 8."""
+        scanner, _ = _make_scanner()
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(return_value=MagicMock(type=0, subtype=8))
+        assert scanner._is_rid_frame(pkt) is True
+
+    def test_is_rid_frame_accepts_action_subtype(self):
+        """_is_rid_frame still passes 802.11 Action frames (subtype 13)."""
+        scanner, _ = _make_scanner()
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(return_value=MagicMock(type=0, subtype=13))
+        assert scanner._is_rid_frame(pkt) is True
+
+    def test_is_rid_frame_rejects_data_frame(self):
+        """_is_rid_frame rejects non-management frames (type != 0)."""
+        scanner, _ = _make_scanner()
+        pkt = MagicMock()
+        pkt.haslayer.return_value = True
+        pkt.__getitem__ = MagicMock(return_value=MagicMock(type=2, subtype=0))
+        assert scanner._is_rid_frame(pkt) is False
