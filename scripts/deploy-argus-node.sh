@@ -36,19 +36,20 @@ LOG_DIR="/var/log/argus-node"
 # ── Argument parsing ─────────────────────────────────────────────────────
 UNATTENDED=false
 OPT_NODE_ID=""; OPT_SERVER_IP=""; OPT_MQTT_PASS=""
-OPT_WIFI_IFACE="wlan1"; OPT_SDR=false
+OPT_WIFI_IFACE="wlan1"; OPT_WIFI_IFACE_5G=""; OPT_SDR=false
 OPT_REPO=""; OPT_GPS_MODE="usb"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --unattended)    UNATTENDED=true;;
-    --node-id)       OPT_NODE_ID="$2";    shift;;
-    --server-ip)     OPT_SERVER_IP="$2";  shift;;
-    --mqtt-password) OPT_MQTT_PASS="$2";  shift;;
-    --wifi-iface)    OPT_WIFI_IFACE="$2"; shift;;
-    --enable-sdr)    OPT_SDR=true;;
-    --repo)          OPT_REPO="$2";       shift;;
-    --gps-mode)      OPT_GPS_MODE="$2";   shift;;
+    --unattended)      UNATTENDED=true;;
+    --node-id)         OPT_NODE_ID="$2";       shift;;
+    --server-ip)       OPT_SERVER_IP="$2";     shift;;
+    --mqtt-password)   OPT_MQTT_PASS="$2";     shift;;
+    --wifi-iface)      OPT_WIFI_IFACE="$2";    shift;;
+    --wifi-iface-5g)   OPT_WIFI_IFACE_5G="$2"; shift;;
+    --enable-sdr)      OPT_SDR=true;;
+    --repo)            OPT_REPO="$2";          shift;;
+    --gps-mode)        OPT_GPS_MODE="$2";      shift;;
     *) warn "Unknown argument: $1";;
   esac
   shift 2>/dev/null || true
@@ -100,8 +101,11 @@ if [[ "$UNATTENDED" == false ]]; then
   MQTT_USER="rid"
   echo ""
 
-  read -rp "  Wi-Fi adapter interface [wlan1]: " WIFI_IFACE
+  read -rp "  Primary Wi-Fi adapter (2.4 GHz) [wlan1]: " WIFI_IFACE
   WIFI_IFACE="${WIFI_IFACE:-wlan1}"
+
+  read -rp "  Secondary Wi-Fi adapter (5 GHz, leave blank if not fitted): " WIFI_IFACE_5G
+  WIFI_IFACE_5G="${WIFI_IFACE_5G:-}"
 
   read -rp "  Enable RTL-SDR scanner? [y/N]: " SDR_RESP
   [[ "${SDR_RESP,,}" == "y" ]] && ENABLE_SDR=true || ENABLE_SDR=false
@@ -114,21 +118,24 @@ else
   MQTT_USER="rid"
   MQTT_PASS="$OPT_MQTT_PASS"
   WIFI_IFACE="$OPT_WIFI_IFACE"
+  WIFI_IFACE_5G="$OPT_WIFI_IFACE_5G"
   ENABLE_SDR="$OPT_SDR"
   GPS_MODE="$OPT_GPS_MODE"
   [[ -n "$SERVER_IP" ]] || fail "--server-ip is required in unattended mode"
   [[ -n "$MQTT_PASS"  ]] || fail "--mqtt-password is required in unattended mode"
 fi
 
-SDR_STR="false"; [[ "$ENABLE_SDR" == true ]] && SDR_STR="true"
+SDR_STR="false";   [[ "$ENABLE_SDR"    == true ]] && SDR_STR="true"
+WIFI_5G_STR="false"; [[ -n "$WIFI_IFACE_5G" ]] && WIFI_5G_STR="true"
 GPS_MODE="${GPS_MODE:-usb}"
 
 echo ""
-info "Node ID  : ${BOLD}${NODE_ID}${NC}"
-info "Server   : ${BOLD}${SERVER_IP}${NC}"
-info "Wi-Fi    : ${WIFI_IFACE}mon"
-info "SDR      : ${SDR_STR}"
-info "GPS mode : ${GPS_MODE}"
+info "Node ID    : ${BOLD}${NODE_ID}${NC}"
+info "Server     : ${BOLD}${SERVER_IP}${NC}"
+info "Wi-Fi 2.4G : ${WIFI_IFACE}mon"
+info "Wi-Fi 5G   : ${WIFI_IFACE_5G:-(not fitted)}"
+info "SDR        : ${SDR_STR}"
+info "GPS mode   : ${GPS_MODE}"
 echo ""
 
 # ── 1/8  System packages ─────────────────────────────────────────────────
@@ -229,9 +236,10 @@ gps:
   auto_detect: true
 
 wifi:
-  enabled: true
-  iface: "${WIFI_IFACE}mon"
-  channel: 6
+  enabled_2g: true
+  interface_2g: "${WIFI_IFACE}mon"
+  enabled_5g: ${WIFI_5G_STR}
+  interface_5g: "${WIFI_IFACE_5G:-wlan2}mon"
 
 bt:
   enabled: true
@@ -314,11 +322,15 @@ echo -e "${BOLD}╔════════════════════�
 echo -e "${BOLD}║           Deployment Complete!                ║${NC}"
 echo -e "${BOLD}╚═══════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  ${GREEN}Node ID  :${NC} ${NODE_ID}"
-echo -e "  ${GREEN}Server   :${NC} ${SERVER_IP}"
-echo -e "  ${GREEN}Service  :${NC} argus-node  (auto-starts on boot)"
-echo -e "  ${GREEN}Config   :${NC} ${CONFIG_DIR}/config.yaml"
-echo -e "  ${GREEN}Logs     :${NC} journalctl -fu argus-node"
+echo -e "  ${GREEN}Node ID    :${NC} ${NODE_ID}"
+echo -e "  ${GREEN}Server     :${NC} ${SERVER_IP}"
+echo -e "  ${GREEN}Wi-Fi 2.4G :${NC} ${WIFI_IFACE}mon"
+if [[ -n "$WIFI_IFACE_5G" ]]; then
+  echo -e "  ${GREEN}Wi-Fi 5G   :${NC} ${WIFI_IFACE_5G}mon"
+fi
+echo -e "  ${GREEN}Service    :${NC} argus-node  (auto-starts on boot)"
+echo -e "  ${GREEN}Config     :${NC} ${CONFIG_DIR}/config.yaml"
+echo -e "  ${GREEN}Logs       :${NC} journalctl -fu argus-node"
 echo ""
 if [[ "$GPS_MODE" == "uart" ]]; then
   echo -e "  ${YELLOW}⚠  A reboot is required to activate UART for GPS.${NC}"
