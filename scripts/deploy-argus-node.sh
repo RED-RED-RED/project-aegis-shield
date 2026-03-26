@@ -231,15 +231,15 @@ mqtt:
 gps:
   serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
   # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
-  baud: 9600
+  baud: 38400
   mode: "${GPS_MODE}"
   auto_detect: true
 
 wifi:
   enabled_2g: true
-  interface_2g: "${WIFI_IFACE}mon"
+  interface_2g: "${WIFI_IFACE}"
   enabled_5g: ${WIFI_5G_STR}
-  interface_5g: "${WIFI_IFACE_5G:-wlan2}mon"
+  interface_5g: "${WIFI_IFACE_5G:-wlan2}"
 
 bt:
   enabled: true
