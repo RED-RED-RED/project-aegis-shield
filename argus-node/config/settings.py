@@ -36,9 +36,9 @@ class NodeConfig:
 
     # ---- GPS ----
     gps_serial_port: str = "/dev/ttyACM0"
-    gps_baud: int = 38400
+    gps_baud: int = 38400          # NEO-M9N USB default (legacy UART modules use 9600)
     gps_mode: str = "usb"          # "usb" or "uart"
-    gps_auto_detect: bool = True   # scan candidate ports if configured port not found
+    gps_auto_detect: bool = False  # False = use configured port directly; True = scan all candidates
 
     # ---- Wi-Fi NAN ----
     # Primary adapter — 2.4 GHz
@@ -60,7 +60,7 @@ class NodeConfig:
 
     # ---- Bluetooth ----
     bt_enabled: bool = True
-    bt_hci_index: int = 0                # hci0
+    bt_hci_index: int = 1                # nRF52840 USB dongle (hci1); Pi onboard BT is hci0
     bt_coded_phy: bool = True            # BT5 Long Range — requires nRF52840
 
     # ---- SDR ----
