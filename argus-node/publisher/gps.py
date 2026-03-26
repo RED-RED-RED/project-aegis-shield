@@ -69,6 +69,7 @@ UBX_CFG_PRT    = 0x00   # Port configuration
 UBX_CFG_MSG    = 0x01   # Enable / disable periodic messages
 UBX_CFG_TMODE3 = 0x71   # Time mode 3 (survey-in / fixed)
 UBX_NAV_STATUS = 0x03   # Navigation status (fix, jamming, spoofing)
+UBX_NAV_PVT    = 0x07   # Position, velocity, time
 UBX_NAV_SVIN   = 0x3B   # Survey-in progress
 
 # Decode tables
@@ -524,6 +525,19 @@ class GPSDaemon:
         """Send initialisation commands to u-blox NEO-M9N."""
         log.info("Initialising u-blox NEO-M9N…")
 
+        # Enable NMEA output on USB port (portID=3).  The NEO-M9N defaults to
+        # UBX-only on USB; without this the NMEA parse path never fires.
+        ser.write(build_ubx(
+            UBX_CLASS_CFG, UBX_CFG_PRT,
+            struct.pack("<BBHIIHHHH", 3, 0, 0, 0, 0, 7, 3, 0, 0),
+        ))
+        time.sleep(0.1)
+        ser.reset_input_buffer()
+
+        # Enable UBX-NAV-PVT (primary position/velocity/time), 1 Hz
+        ser.write(build_ubx_cfg_msg(UBX_CLASS_NAV, UBX_NAV_PVT, rate=1))
+        time.sleep(0.05)
+
         # Enable UBX-NAV-STATUS (jamming + spoofing indicators), 1 Hz
         ser.write(build_ubx_cfg_msg(UBX_CLASS_NAV, UBX_NAV_STATUS, rate=1))
         time.sleep(0.05)
@@ -574,6 +588,8 @@ class GPSDaemon:
         """Dispatch a parsed UBX message to the appropriate handler."""
         if cls == UBX_CLASS_NAV and msg_id == UBX_NAV_STATUS:
             self._parse_nav_status(payload)
+        elif cls == UBX_CLASS_NAV and msg_id == UBX_NAV_PVT:
+            self._parse_nav_pvt(payload)
         elif cls == UBX_CLASS_NAV and msg_id == UBX_NAV_SVIN:
             self._parse_nav_svin(payload)
 
@@ -605,6 +621,47 @@ class GPSDaemon:
             log.warning(f"GPS jamming detected on {self._active_port}: {jam_str}")
         if spoof_str not in ("ok", "unknown"):
             log.warning(f"GPS spoofing detected on {self._active_port}: {spoof_str}")
+
+    # ── UBX-NAV-PVT ────────────────────────────────────────────────────────
+
+    def _parse_nav_pvt(self, payload: bytes) -> None:
+        """
+        UBX-NAV-PVT payload (92 bytes — only the first 36 are needed here):
+          offset  0: iTOW       (U4) ms since week
+          offset 20: fixType    (U1) 0=no fix, 3=3D, 4=GNSS+dead reck, 5=time only
+          offset 23: numSV      (U1) number of satellites used in navigation solution
+          offset 24: lon        (I4) degrees × 1e-7
+          offset 28: lat        (I4) degrees × 1e-7
+          offset 32: height     (I4) mm above ellipsoid
+
+        fix_type >= 3 is treated as a valid position fix.
+        """
+        if len(payload) < 36:
+            return
+        fix_type = payload[20]
+        num_sv   = payload[23]
+        lon_raw  = struct.unpack_from("<i", payload, 24)[0]
+        lat_raw  = struct.unpack_from("<i", payload, 28)[0]
+        alt_raw  = struct.unpack_from("<i", payload, 32)[0]
+        lat = lat_raw * 1e-7
+        lon = lon_raw * 1e-7
+        alt = alt_raw / 1000.0   # mm → metres
+
+        with self._lock:
+            self._satellites = num_sv
+            if fix_type >= 3:
+                self._lat = lat
+                self._lon = lon
+                self._alt = alt
+                if not self._has_fix:
+                    log.info(
+                        f"GPS fix acquired (UBX): {lat:.6f}, {lon:.6f}, "
+                        f"{alt:.1f}m, {num_sv} sats [{self._active_port}]"
+                    )
+                self._has_fix = True
+                self._fix_event.set()
+            else:
+                self._has_fix = False
 
     # ── UBX-NAV-SVIN ──────────────────────────────────────────────────────
 
