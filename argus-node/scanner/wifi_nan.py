@@ -1,13 +1,19 @@
 """
 scanner/wifi_nan.py
 ===================
-Captures Wi-Fi NAN (Neighbor Awareness Networking) Remote ID frames
-using Scapy in monitor mode.
+Captures Wi-Fi Remote ID frames in monitor mode using Scapy.
 
-FAA Remote ID Wi-Fi NAN frames are IEEE 802.11 Action frames with:
-  - Category: 0x04 (Public)
-  - OUI:       FA:0B:BE  (ASTM / Remote ID)
-  - Subtype:   0x0D
+Supports two ASTM F3411-22a Wi-Fi transport types simultaneously:
+
+  Wi-Fi NAN Action frames (802.11 Action, subtype 13):
+    - Category: 0x04 (Public), Code: 0x09 (NAN)
+    - OUI: FA:0B:BE  (ASTM / Remote ID)
+    - Detections tagged transport="wifi_nan"
+
+  Wi-Fi Beacon frames (802.11 Management, subtype 8):
+    - Vendor-specific IE (type 221) with OUI FA:0B:BC (ASTM) or
+      6A:5C:35 (OpenDroneID / ESP32 uav_electronic_ids)
+    - Detections tagged transport="wifi_beacon"
 
 Hardware: Alfa AWUS036ACM (mt76x2u driver) — other cards may not
           pass NAN action frames through in monitor mode.
@@ -28,7 +34,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 
-from scapy.all import sniff, RadioTap, Dot11, Raw
+from scapy.all import sniff, RadioTap, Dot11, Dot11Elt, Raw
 
 from parser.opendroneid import OpenDroneIDParser, RIDFrame
 from publisher.mqtt_client import MQTTPublisher
@@ -36,11 +42,17 @@ from publisher.gps import GPSDaemon
 
 log = logging.getLogger("wifi-nan")
 
-# Remote ID / ASTM OUI in Wi-Fi NAN action frames
-RID_OUI = bytes([0xFA, 0x0B, 0xBE])
-RID_ACTION_CATEGORY = 0x04   # Public Action
-RID_ACTION_CODE     = 0x09   # NAN (Neighbor Awareness Networking)
+# ── Wi-Fi NAN Action frame constants ───────────────────────────────────────
+RID_OUI             = bytes([0xFA, 0x0B, 0xBE])   # ASTM OUI in NAN action frames
+RID_ACTION_CATEGORY = 0x04                         # Public Action
+RID_ACTION_CODE     = 0x09                         # NAN (Neighbor Awareness Networking)
 NAN_SVC_RID_SUBTYPE = 0x0D
+
+# ── Wi-Fi Beacon vendor-specific IE constants ───────────────────────────────
+RID_BEACON_OUI_ASTM = bytes([0xFA, 0x0B, 0xBC])   # ASTM F3411 Beacon OUI
+RID_BEACON_OUI_ODID = bytes([0x6A, 0x5C, 0x35])   # OpenDroneID / ESP32 alternative OUI
+RID_BEACON_IE_TYPE  = 0x0D                         # OUI type byte for Remote ID payload
+WIFI_IE_VENDOR_SPECIFIC = 221                      # 802.11 vendor-specific IE element ID
 
 
 @dataclass
@@ -128,7 +140,7 @@ class WiFiNANScanner:
                     prn=self._handle_packet,
                     store=False,
                     timeout=5,          # Return every 5 s so we can check stop_event
-                    lfilter=self._is_action_frame,
+                    lfilter=self._is_rid_frame,
                 )
             except OSError as e:
                 log.error(f"[{self._label}] Sniff error on {self.iface}: {e} — retrying in 5 s")
@@ -140,13 +152,20 @@ class WiFiNANScanner:
     # Internal
     # ------------------------------------------------------------------ #
 
-    def _is_action_frame(self, pkt) -> bool:
-        """Pre-filter: only pass 802.11 Action frames."""
-        return pkt.haslayer(Dot11) and pkt[Dot11].type == 0 and pkt[Dot11].subtype == 13
+    def _is_rid_frame(self, pkt) -> bool:
+        """Pre-filter: pass 802.11 Action frames (subtype 13) and Beacon frames (subtype 8)."""
+        return (
+            pkt.haslayer(Dot11)
+            and pkt[Dot11].type == 0
+            and pkt[Dot11].subtype in (8, 13)
+        )
 
     def _handle_packet(self, pkt):
         try:
-            self._process(pkt)
+            if pkt.haslayer(Dot11) and pkt[Dot11].subtype == 8:
+                self._process_beacon(pkt)
+            else:
+                self._process(pkt)
         except Exception as e:
             log.debug(f"Packet parse error: {e}")
 
@@ -208,6 +227,73 @@ class WiFiNANScanner:
                 node_alt=self.gps.alt,
                 band=self.band,
             )
+
+    def _process_beacon(self, pkt):
+        rid_payload = self._extract_beacon_rid_payload(pkt)
+        if rid_payload is None:
+            return
+
+        rssi   = self._extract_rssi(pkt)
+        src_mac = pkt[Dot11].addr2 or "00:00:00:00:00:00"
+
+        frames: list[RIDFrame] = self._parser.parse(rid_payload, transport="wifi_beacon")
+        if not frames:
+            return
+
+        for frame in frames:
+            now  = time.time()
+            last = self._seen.get(frame.drone_id, 0)
+            if now - last < self._dedup_window:
+                continue
+            self._seen[frame.drone_id] = now
+
+            log.info(
+                f"[{self._label}] RID(beacon) id={frame.drone_id}  "
+                f"rssi={rssi} dBm  {frame.lat:.5f},{frame.lon:.5f}"
+            )
+
+            self.publisher.publish_detection(
+                node_id=self.node_id,
+                transport="wifi_beacon",
+                frame=frame,
+                rssi=rssi,
+                src_addr=src_mac,
+                node_lat=self.gps.lat,
+                node_lon=self.gps.lon,
+                node_alt=self.gps.alt,
+                band=self.band,
+            )
+
+    def _extract_beacon_rid_payload(self, pkt) -> Optional[bytes]:
+        """
+        Walk the 802.11 information element chain looking for a vendor-specific
+        IE (element ID 221) whose OUI matches the ASTM or OpenDroneID Remote ID
+        OUIs.  Returns the RID payload bytes (after the 4-byte OUI+type prefix)
+        or None if no matching IE is found.
+
+        The IE body layout is:
+          [0:3]  OUI (3 bytes)
+          [3]    OUI type byte — must be RID_BEACON_IE_TYPE (0x0D)
+          [4:]   OpenDroneID payload passed directly to the parser
+        """
+        elt = pkt.getlayer(Dot11Elt)
+        while elt is not None:
+            if elt.ID == WIFI_IE_VENDOR_SPECIFIC:
+                data = bytes(elt.info)
+                if len(data) >= 4:
+                    oui     = data[:3]
+                    ie_type = data[3]
+                    if (
+                        oui in (RID_BEACON_OUI_ASTM, RID_BEACON_OUI_ODID)
+                        and ie_type == RID_BEACON_IE_TYPE
+                    ):
+                        payload = data[4:]
+                        if payload:
+                            return payload
+            # Advance to the next IE; stop when payload has no 'ID' attribute
+            # (end of the IE chain — scapy uses Padding / NoPayload sentinel).
+            elt = elt.payload if hasattr(elt.payload, "ID") else None
+        return None
 
     def _extract_rssi(self, pkt) -> int:
         """Pull RSSI from RadioTap header. Returns 0 if unavailable."""
