@@ -37,7 +37,7 @@ from publisher.gps import (
     UBX_SYNC1, UBX_SYNC2,
     UBX_CLASS_NAV, UBX_CLASS_CFG,
     UBX_CFG_MSG, UBX_CFG_PRT, UBX_CFG_TMODE3,
-    UBX_NAV_STATUS, UBX_NAV_SVIN,
+    UBX_NAV_STATUS, UBX_NAV_PVT, UBX_NAV_SVIN,
     SVIN_MIN_DUR_S, SVIN_ACC_LIMIT_01MM,
 )
 
@@ -521,3 +521,159 @@ class TestProbePortUBXCFGPRT:
         call_names = [c[0] for c in mock_ser.method_calls]
         assert "reset_input_buffer" in call_names
         assert call_names.index("reset_input_buffer") < call_names.index("readline")
+
+
+# ── UBX-NAV-PVT parsing ────────────────────────────────────────────────────
+
+def _make_pvt_payload(
+    fix_type: int = 3,
+    num_sv:   int = 8,
+    lat_deg:  float = 51.477928,
+    lon_deg:  float = -0.001545,
+    alt_mm:   int   = 65_000,
+) -> bytes:
+    """
+    Build a minimal 36-byte NAV-PVT payload with the fields used by
+    _parse_nav_pvt.  Fields not relevant to the handler are zeroed.
+
+    Layout (first 36 bytes only):
+      offset  0: iTOW      U4   (zeroed)
+      offset  4–19:        16 bytes reserved/other fields (zeroed)
+      offset 20: fixType   U1
+      offset 21: flags     U1   (zeroed)
+      offset 22: flags2    U1   (zeroed)
+      offset 23: numSV     U1
+      offset 24: lon       I4   degrees × 1e-7
+      offset 28: lat       I4   degrees × 1e-7
+      offset 32: height    I4   mm above ellipsoid
+    """
+    buf = bytearray(36)
+    buf[20] = fix_type
+    buf[23] = num_sv
+    struct.pack_into("<i", buf, 24, int(round(lon_deg * 1e7)))
+    struct.pack_into("<i", buf, 28, int(round(lat_deg * 1e7)))
+    struct.pack_into("<i", buf, 32, alt_mm)
+    return bytes(buf)
+
+
+class TestNavPVTParsing:
+
+    def _daemon(self):
+        return GPSDaemon(survey_state_path=Path("/tmp/survey_pvt_test.json"))
+
+    def test_fix_type_3_sets_has_fix_true(self):
+        """fix_type=3 (3D fix) should set _has_fix=True."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3))
+        assert d.has_fix is True
+
+    def test_fix_type_4_sets_has_fix_true(self):
+        """fix_type=4 (GNSS+dead reck) also counts as a valid fix."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=4))
+        assert d.has_fix is True
+
+    def test_fix_type_0_sets_has_fix_false(self):
+        """fix_type=0 (no fix) must leave _has_fix=False."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=0))
+        assert d.has_fix is False
+
+    def test_fix_type_2_sets_has_fix_false(self):
+        """fix_type=2 (2D fix — below threshold 3) must not set a valid fix."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=2))
+        assert d.has_fix is False
+
+    def test_lat_lon_decoded_correctly(self):
+        """lat/lon I4 fields (degrees × 1e-7) are decoded to float degrees."""
+        d = self._daemon()
+        lat, lon = 51.477928, -0.001545
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3, lat_deg=lat, lon_deg=lon))
+        assert abs(d.lat - lat) < 1e-6
+        assert abs(d.lon - lon) < 1e-6
+
+    def test_altitude_decoded_from_mm_to_metres(self):
+        """Height field (mm) is converted to metres."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3, alt_mm=65_432))
+        assert abs(d.alt - 65.432) < 0.001
+
+    def test_num_sv_stored(self):
+        """numSV field is stored on the daemon instance."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3, num_sv=12))
+        assert d.satellites == 12
+
+    def test_payload_too_short_is_ignored(self):
+        """Payloads shorter than 36 bytes must not raise and must not set fix."""
+        d = self._daemon()
+        d._parse_nav_pvt(b"\x00" * 35)   # one byte too short
+        assert d.has_fix is False
+
+    def test_payload_empty_is_ignored(self):
+        """Empty payload must not raise."""
+        d = self._daemon()
+        d._parse_nav_pvt(b"")
+        assert d.has_fix is False
+
+    def test_fix_acquired_sets_fix_event(self):
+        """_fix_event is set when a valid fix arrives."""
+        d = self._daemon()
+        assert not d._fix_event.is_set()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3))
+        assert d._fix_event.is_set()
+
+    def test_lost_fix_clears_has_fix(self):
+        """Losing fix (fix_type=0 after fix_type=3) sets _has_fix back to False."""
+        d = self._daemon()
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=3))
+        assert d.has_fix is True
+        d._parse_nav_pvt(_make_pvt_payload(fix_type=0))
+        assert d.has_fix is False
+
+
+# ── _handle_ubx NAV-PVT dispatch ───────────────────────────────────────────
+
+class TestHandleUBXDispatch:
+
+    def _daemon(self):
+        return GPSDaemon(survey_state_path=Path("/tmp/survey_dispatch_test.json"))
+
+    def test_handle_ubx_dispatches_nav_pvt(self):
+        """_handle_ubx routes class=0x01 id=0x07 to _parse_nav_pvt."""
+        d = self._daemon()
+        payload = _make_pvt_payload(fix_type=3, lat_deg=42.0, lon_deg=-71.0)
+        with patch.object(d, "_parse_nav_pvt") as mock_pvt:
+            d._handle_ubx(UBX_CLASS_NAV, UBX_NAV_PVT, payload)
+        mock_pvt.assert_called_once_with(payload)
+
+    def test_handle_ubx_dispatches_nav_status(self):
+        """_handle_ubx still routes 0x01/0x03 to _parse_nav_status."""
+        d = self._daemon()
+        with patch.object(d, "_parse_nav_status") as mock_status:
+            d._handle_ubx(UBX_CLASS_NAV, UBX_NAV_STATUS, b"\x00" * 16)
+        mock_status.assert_called_once()
+
+    def test_handle_ubx_dispatches_nav_svin(self):
+        """_handle_ubx still routes 0x01/0x3B to _parse_nav_svin."""
+        d = self._daemon()
+        with patch.object(d, "_parse_nav_svin") as mock_svin:
+            d._handle_ubx(UBX_CLASS_NAV, UBX_NAV_SVIN, b"\x00" * 40)
+        mock_svin.assert_called_once()
+
+    def test_handle_ubx_unknown_message_is_silently_ignored(self):
+        """Unknown UBX class/id combinations must not raise."""
+        d = self._daemon()
+        d._handle_ubx(0xFF, 0xFF, b"\x00" * 10)   # no exception expected
+
+
+# ── NodeConfig default baud rate ───────────────────────────────────────────
+
+class TestNodeConfigDefaults:
+
+    def test_default_gps_baud_is_38400(self):
+        """Default gps_baud must be 38400 to match NEO-M9N USB default."""
+        from config.settings import NodeConfig
+        cfg = NodeConfig()
+        assert cfg.gps_baud == 38400
