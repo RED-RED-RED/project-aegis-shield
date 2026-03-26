@@ -15,6 +15,14 @@ scapy==2.5.0              # Packet capture and 802.11 frame parsing
 bleak==0.22.3             # Cross-platform BLE (async) — 0.22.x adds Python 3.13 support
 
 # SDR — practical on Pi 4 with USB 3.0 (comment out if not using RTL-SDR)
-pyrtlsdr==0.3.0
+# Pin to 0.2.93: 0.3.x/0.4.x require rtlsdr_set_dithering which is absent in
+# the Debian librtlsdr-dev 2.0.2 package shipped on Raspberry Pi OS Bookworm.
+pyrtlsdr==0.2.93
 numpy==2.2.3              # 2.x required for Python 3.13
 scipy==1.15.2             # 1.13+ required for Python 3.13
+
+# Python 3.13 compatibility — venvs no longer include setuptools by default but
+# pyrtlsdr 0.2.x imports pkg_resources (provided by setuptools) at module load.
+# The patch-pyrtlsdr.sh script wraps that import in try/except as a second layer
+# of defence; having setuptools present is the first.
+setuptools>=70.0
