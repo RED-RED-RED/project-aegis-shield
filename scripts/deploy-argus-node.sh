@@ -324,9 +324,9 @@ echo -e "${BOLD}╚════════════════════�
 echo ""
 echo -e "  ${GREEN}Node ID    :${NC} ${NODE_ID}"
 echo -e "  ${GREEN}Server     :${NC} ${SERVER_IP}"
-echo -e "  ${GREEN}Wi-Fi 2.4G :${NC} ${WIFI_IFACE}mon"
+echo -e "  ${GREEN}Wi-Fi 2.4G :${NC} ${WIFI_IFACE}"
 if [[ -n "$WIFI_IFACE_5G" ]]; then
-  echo -e "  ${GREEN}Wi-Fi 5G   :${NC} ${WIFI_IFACE_5G}mon"
+  echo -e "  ${GREEN}Wi-Fi 5G   :${NC} ${WIFI_IFACE_5G}"
 fi
 echo -e "  ${GREEN}Service    :${NC} argus-node  (auto-starts on boot)"
 echo -e "  ${GREEN}Config     :${NC} ${CONFIG_DIR}/config.yaml"
