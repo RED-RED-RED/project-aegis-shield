@@ -51,7 +51,7 @@ fi
 
 # ---- Bluetooth ----
 echo "[setup] Bringing up Bluetooth $BT_HCI"
-hciconfig "$BT_HCI" up 2>/dev/null || rfkill unblock bluetooth && hciconfig "$BT_HCI" up
+hciconfig "$BT_HCI" up 2>/dev/null || { rfkill unblock bluetooth && hciconfig "$BT_HCI" up; }
 
 # Disable page scan / inquiry scan (we're passive only)
 hciconfig "$BT_HCI" noscan 2>/dev/null || true
