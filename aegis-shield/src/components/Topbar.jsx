@@ -199,9 +199,10 @@ export default function Topbar() {
   const alertCount   = alerts.filter(a => a.level === 'high').length
   const noRidCount   = drones.filter(d => !d.has_valid_rid).length
 
-  const hh = now.getUTCHours().toString().padStart(2,'0')
-  const mm = now.getUTCMinutes().toString().padStart(2,'0')
-  const ss = now.getUTCSeconds().toString().padStart(2,'0')
+  const hh = now.getHours().toString().padStart(2,'0')
+  const mm = now.getMinutes().toString().padStart(2,'0')
+  const ss = now.getSeconds().toString().padStart(2,'0')
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone.split('/').pop().replace('_',' ')
 
   return (
     <>
@@ -290,7 +291,7 @@ export default function Topbar() {
           {imperial ? 'IMPERIAL' : 'METRIC'}
         </button>
 
-        <div className="tb-time">{hh}:{mm}:{ss} UTC</div>
+        <div className="tb-time">{hh}:{mm}:{ss} {tz}</div>
       </header>
     </>
   )
