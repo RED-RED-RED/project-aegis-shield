@@ -16,12 +16,15 @@ Reference spec: https://www.astm.org/f3411-22a.html
 Open source reference: https://github.com/opendroneid/opendroneid-core-c
 """
 
+import logging
 import math
 import struct
 import time
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------ #
@@ -124,6 +127,13 @@ class OpenDroneIDParser:
     """
 
     def parse(self, data: bytes, transport: str = "") -> list[RIDFrame]:
+        """
+        Decode raw OpenDroneID bytes into RIDFrame objects.
+
+        MessagePack detection: (data[0] >> 4) & 0x0F == 0xF (MsgType.MESSAGE_PACK).
+        A MessagePack payload uses the 3-byte ASTM F3411-22a header before messages;
+        all other types are parsed directly as a single 25-byte message.
+        """
         if not data or len(data) < FRAME_LEN:
             return []
 
@@ -148,21 +158,32 @@ class OpenDroneIDParser:
 
     def _parse_message_pack(self, data: bytes, transport: str) -> list[RIDFrame]:
         """
-        MessagePack format:
-          Byte 0:    0xF? header
-          Byte 1:    message count (max 9)
-          Bytes 2+:  25-byte messages back-to-back
+        ASTM F3411-22a ODID_MessagePack_encoded layout:
+          Byte 0:    MessageType(4) | ProtoVersion(4) — 0xF2 for packed
+          Byte 1:    SingleMessageSize — always 25 (0x19)
+          Byte 2:    MsgPackSize — number of messages (max 9)
+          Bytes 3+:  25-byte messages back-to-back
         """
-        if len(data) < 2:
+        if len(data) < 3:
             return []
 
-        count = data[1] & 0x0F
+        single_size = data[1]
+        count       = data[2]
+        count       = min(count, 9)   # clamp to spec maximum
+        if single_size != FRAME_LEN:
+            log.warning(
+                "MessagePack SingleMessageSize=%d, expected %d — "
+                "payload may be malformed; falling back to FRAME_LEN",
+                single_size, FRAME_LEN,
+            )
+            single_size = FRAME_LEN
+
         messages = []
         for i in range(count):
-            offset = 2 + i * FRAME_LEN
-            if offset + FRAME_LEN > len(data):
+            offset = 3 + i * single_size
+            if offset + single_size > len(data):
                 break
-            messages.append(data[offset:offset + FRAME_LEN])
+            messages.append(data[offset:offset + single_size])
 
         # Build a single aggregated frame from all sub-messages
         frame = RIDFrame(transport=transport, raw_hex=data.hex())
