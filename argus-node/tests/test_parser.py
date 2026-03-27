@@ -78,7 +78,7 @@ class TestLocation:
         basic = bytes([0x00, (1 << 4) | 2]) + b"TEST000\x00" * 2 + bytes(7)
         basic = basic[:25]
 
-        pack_header = bytes([(MsgType.MESSAGE_PACK << 4) | 0, 2])
+        pack_header = bytes([(MsgType.MESSAGE_PACK << 4) | 0, 0x19, 2])
         msg_pack = pack_header + basic + data
 
         parser = OpenDroneIDParser()
@@ -101,7 +101,7 @@ class TestLocation:
         # Parse as part of message pack
         basic = bytes([0x00, 0x12]) + b"UNKNOWNDRONE\x00" * 2
         basic = basic[:25]
-        pack = bytes([(MsgType.MESSAGE_PACK << 4), 2]) + basic + data
+        pack = bytes([(MsgType.MESSAGE_PACK << 4), 0x19, 2]) + basic + data
 
         parser = OpenDroneIDParser()
         frames = parser.parse(pack)
@@ -118,7 +118,7 @@ class TestOperatorID:
         # Combine with BasicID in a message pack
         basic = bytes([0x00, 0x12]) + b"DRONEABC123\x00" * 2
         basic = basic[:25]
-        pack = bytes([(MsgType.MESSAGE_PACK << 4), 2]) + basic + data
+        pack = bytes([(MsgType.MESSAGE_PACK << 4), 0x19, 2]) + basic + data
 
         parser = OpenDroneIDParser()
         frames = parser.parse(pack)
@@ -153,7 +153,7 @@ class TestMessagePack:
         op[1] = 0
         op[2:22] = b"OP-US-29847\x00" * 2
 
-        pack = bytearray([MsgType.MESSAGE_PACK << 4, 3])
+        pack = bytearray([MsgType.MESSAGE_PACK << 4, 0x19, 3])
         pack += basic + loc + op
 
         frames = parser.parse(bytes(pack))
@@ -167,13 +167,52 @@ class TestMessagePack:
 
     def test_empty_pack_returns_no_frames(self):
         parser = OpenDroneIDParser()
-        pack = bytes([(MsgType.MESSAGE_PACK << 4), 0] + [0] * 23)
+        pack = bytes([(MsgType.MESSAGE_PACK << 4), 0x19, 0] + [0] * 22)
         frames = parser.parse(pack)
         assert frames == []
 
     def test_truncated_data_doesnt_crash(self):
         parser = OpenDroneIDParser()
         frames = parser.parse(b"\x0F\x02" + b"\x00" * 10)  # Too short
+        assert isinstance(frames, list)
+
+    def test_parse_message_pack_correct_offsets(self):
+        """Verify MessagePack parser uses correct ASTM F3411-22a byte offsets."""
+        # Construct a minimal valid MessagePack:
+        # Byte 0: 0xF2 (MessageType=PACKED, ProtoVersion=2)
+        # Byte 1: 0x19 (SingleMessageSize=25)
+        # Byte 2: 0x01 (MsgPackSize=1 message)
+        # Bytes 3-27: BasicID message with known drone ID
+        basic_id_msg = bytearray(25)
+        basic_id_msg[0] = 0x00  # MessageType=BASIC_ID, ProtoVersion=0
+        basic_id_msg[1] = 0x30  # IDType=3 (operator_id), UAType=0
+        drone_id = b"TEST-DRONE-1"
+        basic_id_msg[2:2 + len(drone_id)] = drone_id
+
+        pack = bytearray(3 + 25)
+        pack[0] = 0xF2  # MessagePack header
+        pack[1] = 0x19  # SingleMessageSize = 25
+        pack[2] = 0x01  # MsgPackSize = 1
+        pack[3:] = basic_id_msg
+
+        parser = OpenDroneIDParser()
+        frames = parser.parse(bytes(pack), transport="wifi_beacon")
+        assert len(frames) == 1
+        assert "TEST-DRONE-1" in frames[0].drone_id
+
+    def test_old_incorrect_layout_fails_gracefully(self):
+        """Old layout (count in byte 1, messages at byte 2) must not crash."""
+        # Old format: [header, count=1, <25-byte BasicID>] — no SingleMessageSize byte
+        basic_id_msg = bytearray(25)
+        basic_id_msg[0] = 0x00  # BASIC_ID
+        basic_id_msg[1] = (1 << 4) | 2
+        basic_id_msg[2:18] = b"FAKE-OLD-FORMAT-D"
+
+        old_pack = bytearray([0xF2, 0x01]) + basic_id_msg
+
+        parser = OpenDroneIDParser()
+        # single_size=1 ≠ FRAME_LEN → fallback; count=data[2]=0x00 → no messages
+        frames = parser.parse(bytes(old_pack))
         assert isinstance(frames, list)
 
 
