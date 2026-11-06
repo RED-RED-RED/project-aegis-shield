@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from config.settings import load_config, NodeConfig
+from banner import banner
 from scanner.wifi_nan import WiFiNANScanner
 from scanner.bluetooth import BluetoothScanner
 from scanner.sdr import SDRScanner
@@ -67,6 +68,8 @@ signal.signal(signal.SIGINT,  _handle_signal)
 # --------------------------------------------------------------------------- #
 def main():
     cfg: NodeConfig = load_config()
+    for line in banner(cfg.node_id, cfg.site_name).splitlines():
+        log.info(line)
     log.info(f"Starting AEGIS ARGUS Node — ID={cfg.node_id}, site={cfg.site_name}")
 
     # ---- MQTT publisher (shared across all scanners) ----

@@ -146,9 +146,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   git curl wget \
   aircrack-ng iw wireless-tools rfkill \
   bluez bluez-tools \
-  gpsd gpsd-clients \
   rtl-sdr librtlsdr-dev \
-  usbutils
+  usbutils tcpdump mosquitto-clients
 ok "Packages installed"
 
 # ── 2/8  Hardware configuration ──────────────────────────────────────────
@@ -226,6 +225,11 @@ fi
 ok "RTL-SDR Python binding OK"
 
 # ── 5/8  Configuration ────────────────────────────────────────────────────
+if [[ "$GPS_MODE" == "uart" ]]; then
+  GPS_PORT="/dev/ttyAMA0"
+else
+  GPS_PORT="/dev/ttyGPS"   # stable symlink from 21-ublox-gps.rules
+fi
 step 5 "Writing node configuration"
 mkdir -p "$CONFIG_DIR" "$LOG_DIR"
 
@@ -246,8 +250,7 @@ mqtt:
   topic_prefix: "argus"
 
 gps:
-  serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
-  # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
+  serial_port: "${GPS_PORT}"   # /dev/ttyGPS = udev symlink to the u-blox NEO-M9N
   baud: 38400
   mode: "${GPS_MODE}"
   auto_detect: false         # set true only if port assignment is unknown
@@ -274,26 +277,31 @@ YAML
 chmod 640 "$CONFIG_DIR/config.yaml"
 ok "Config written to $CONFIG_DIR/config.yaml"
 
-# ── 6/8  gpsd ────────────────────────────────────────────────────────────
-step 6 "GPS daemon (gpsd)"
+# ── 6/8  GPS and network ownership ───────────────────────────────────────
+step 6 "GPS and network ownership"
 
-if [[ "$GPS_MODE" == "uart" ]]; then
-  GPS_DEVICE="/dev/ttyAMA0"
-  GPSD_USBAUTO="false"
+# The ARGUS agent talks to the u-blox receiver directly over serial (UBX
+# NAV-PVT).  gpsd must NOT run: it opens the same port, steals bytes and
+# reconfigures the receiver's protocol output.  Remove/mask it if present.
+if systemctl list-unit-files 2>/dev/null | grep -q '^gpsd'; then
+  systemctl disable --now gpsd.socket gpsd.service 2>/dev/null || true
+  systemctl mask gpsd.socket gpsd.service 2>/dev/null || true
+  ok "gpsd disabled and masked (agent owns the GPS port)"
 else
-  GPS_DEVICE="/dev/ttyACM0"
-  GPSD_USBAUTO="true"
+  ok "gpsd not installed (agent owns the GPS port)"
 fi
 
-cat > /etc/default/gpsd << GPSD
-START_DAEMON="true"
-GPSD_OPTIONS="-n"
-DEVICES="${GPS_DEVICE}"
-USBAUTO="${GPSD_USBAUTO}"
-GPSD
-systemctl enable gpsd --quiet
-systemctl start  gpsd 2>/dev/null && ok "gpsd started" || \
-  warn "gpsd failed to start — GPS module may need to be attached first"
+# NetworkManager must leave the monitor-mode adapters alone, but keep
+# managing eth0.  Unmanaging wlan1/wlan2 replaces 'airmon-ng check kill',
+# which stopped NetworkManager entirely and could drop the node's wired IP.
+if [[ -d /etc/NetworkManager/conf.d ]]; then
+  cat > /etc/NetworkManager/conf.d/99-argus-monitor.conf << 'NMCONF'
+[keyfile]
+unmanaged-devices=interface-name:wlan1;interface-name:wlan2
+NMCONF
+  systemctl reload NetworkManager 2>/dev/null || true
+  ok "NetworkManager will ignore wlan1/wlan2"
+fi
 
 # Post-install GPS device check
 if [[ "$GPS_MODE" != "uart" ]]; then

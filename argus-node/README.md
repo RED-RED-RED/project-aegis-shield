@@ -50,7 +50,7 @@ argus-node/
 
 git clone https://github.com/your-org/aegis /tmp/argus-node
 cd /tmp/argus-node/argus-node
-sudo bash install.sh
+sudo bash scripts/deploy-argus-node.sh   # from the repo root (install.sh is deprecated)
 
 # 4. Edit config
 sudo nano /etc/argus-node/config.yaml

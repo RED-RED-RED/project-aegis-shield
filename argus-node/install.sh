@@ -9,6 +9,12 @@
 
 set -euo pipefail
 
+# DEPRECATED: this legacy installer enables gpsd (which fights the agent for
+# the GPS port) and predates the production fixes.  Use the deploy script:
+#   sudo bash scripts/deploy-argus-node.sh
+echo "argus-node/install.sh is deprecated. Run: sudo bash scripts/deploy-argus-node.sh" >&2
+exit 1
+
 APP_DIR="/opt/argus-node"
 CONFIG_DIR="/etc/argus-node"
 LOG_DIR="/var/log/argus-node"

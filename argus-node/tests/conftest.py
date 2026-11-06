@@ -18,7 +18,14 @@ correctly as long as both the scanner module and the test file obtain
 import sys
 from unittest.mock import MagicMock
 
-# Only install the stub when scapy is genuinely absent.
+# Only install the stub when scapy is genuinely absent.  When the real
+# package is installed (Pi venv, CI with scapy) use it, so the wire-format
+# tests in test_rid_wire_formats.py can build and dissect real frames.
+try:
+    import scapy.all  # noqa: F401
+except Exception:
+    pass
+
 if "scapy" not in sys.modules:
     _scapy_stub = MagicMock()
     sys.modules["scapy"]           = _scapy_stub

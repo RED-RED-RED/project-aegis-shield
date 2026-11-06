@@ -50,27 +50,21 @@ class TestBasicID:
 class TestLocation:
     def _make_location_frame(self, lat, lon, alt_baro=50.0, speed_h=5.0,
                               heading=90, status=2):
-        """Helper to encode a Location frame."""
-        header = bytes([(MsgType.LOCATION << 4)])
-        status_byte = bytes([(status << 4)])
-        heading_byte = bytes([heading % 256])
-        speed_raw = int(speed_h / 0.25) & 0xFFFF
-        speed_bytes = struct.pack("<H", speed_raw)
-        vspeed_bytes = struct.pack("<h", 0)
-        lat_raw = int(lat * 1e7)
-        lon_raw = int(lon * 1e7)
-        lat_bytes = struct.pack("<i", lat_raw)
-        lon_bytes = struct.pack("<i", lon_raw)
-        alt_baro_raw = int((alt_baro + 1000) * 2) & 0xFFFF
-        alt_bytes = struct.pack("<H", alt_baro_raw)
-        alt_geo_bytes = struct.pack("<H", alt_baro_raw)
-        height_bytes = struct.pack("<H", alt_baro_raw)
-        padding = bytes([0x00] * 4)
-
-        frame = (header + status_byte + heading_byte + speed_bytes +
-                 vspeed_bytes + lat_bytes + lon_bytes + alt_bytes +
-                 alt_geo_bytes + height_bytes + padding)
-        return frame.ljust(25, b"\x00")
+        """Encode a Location message per ODID_Location_encoded (ASTM F3411)."""
+        ew = 1 if heading >= 180 else 0
+        frame = bytearray(25)
+        frame[0] = (MsgType.LOCATION << 4) | 2
+        frame[1] = (status << 4) | (ew << 1)
+        frame[2] = int(heading - 180 * ew)
+        frame[3] = int(speed_h / 0.25) & 0xFF
+        frame[4] = 0
+        struct.pack_into("<i", frame, 5, int(round(lat * 1e7)))
+        struct.pack_into("<i", frame, 9, int(round(lon * 1e7)))
+        alt_raw = int((alt_baro + 1000) * 2) & 0xFFFF
+        struct.pack_into("<H", frame, 13, alt_raw)
+        struct.pack_into("<H", frame, 15, alt_raw)
+        struct.pack_into("<H", frame, 17, alt_raw)
+        return bytes(frame)
 
     def test_position_decode(self):
         data = self._make_location_frame(lat=37.7749, lon=-122.4194, alt_baro=42.0)
@@ -90,23 +84,25 @@ class TestLocation:
         assert abs(f.alt_baro - 42.0) < 1.0
         assert f.speed_h == pytest.approx(5.0, abs=0.5)
 
-    def test_unknown_alt_returns_nan(self):
-        import math
-        data = self._make_location_frame(lat=0, lon=0)
-        # Set altitude fields to 0xFFFF (unknown)
-        data = bytearray(data)
-        struct.pack_into("<H", data, 15, 0xFFFF)  # alt_baro
+    def test_unknown_alt_returns_zero(self):
+        """ODID 'unknown' altitude (-1000 m, raw 0) decodes to 0.0, JSON-safe."""
+        data = bytearray(self._make_location_frame(lat=0, lon=0))
+        struct.pack_into("<H", data, 13, 0)  # alt_baro = invalid
         data = bytes(data)
 
-        # Parse as part of message pack
         basic = bytes([0x00, 0x12]) + b"UNKNOWNDRONE\x00" * 2
         basic = basic[:25]
         pack = bytes([(MsgType.MESSAGE_PACK << 4), 0x19, 2]) + basic + data
 
-        parser = OpenDroneIDParser()
-        frames = parser.parse(pack)
-        if frames:
-            assert math.isnan(frames[0].alt_baro)
+        frames = OpenDroneIDParser().parse(pack)
+        assert frames and frames[0].alt_baro == 0.0
+
+    def test_heading_west_half(self):
+        data = self._make_location_frame(lat=40.0, lon=-100.0, heading=270)
+        basic = (bytes([0x00, 0x12]) + b"HEADINGTEST\x00" * 2)[:25]
+        pack = bytes([(MsgType.MESSAGE_PACK << 4), 0x19, 2]) + basic + data
+        frames = OpenDroneIDParser().parse(pack)
+        assert frames[0].heading == 270.0
 
 
 class TestOperatorID:
@@ -142,10 +138,10 @@ class TestMessagePack:
         loc[0] = MsgType.LOCATION << 4
         loc[1] = 0x20  # status=airborne
         loc[2] = 127   # heading ~127 degrees
-        struct.pack_into("<H", loc, 3, int(8.2 / 0.25))  # 8.2 m/s
-        struct.pack_into("<i", loc, 7,  int(42.3601 * 1e7))
-        struct.pack_into("<i", loc, 11, int(-71.0589 * 1e7))
-        struct.pack_into("<H", loc, 15, int((42.0 + 1000) * 2))
+        loc[3] = int(8.2 / 0.25)                          # 8.2 m/s
+        struct.pack_into("<i", loc, 5, int(42.3601 * 1e7))
+        struct.pack_into("<i", loc, 9, int(-71.0589 * 1e7))
+        struct.pack_into("<H", loc, 13, int((42.0 + 1000) * 2))
 
         # OperatorID
         op = bytearray(25)

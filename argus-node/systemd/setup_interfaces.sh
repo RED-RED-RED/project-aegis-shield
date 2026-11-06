@@ -35,8 +35,12 @@ setup_monitor() {
 # can come up RF-killed and hciconfig up will silently fail without this.
 rfkill unblock all 2>/dev/null || true
 
-# Kill anything that might interfere (NetworkManager, wpa_supplicant)
-airmon-ng check kill 2>/dev/null || true
+# Keep NetworkManager off the monitor adapters without stopping it (it still
+# manages eth0).  The deploy script also writes a persistent unmanaged rule.
+if command -v nmcli &>/dev/null; then
+    nmcli device set "$WIFI_IFACE_2G" managed no 2>/dev/null || true
+    nmcli device set "$WIFI_IFACE_5G" managed no 2>/dev/null || true
+fi
 
 # ---- Primary adapter (2.4 GHz) ----
 setup_monitor "$WIFI_IFACE_2G" "2.4 GHz"

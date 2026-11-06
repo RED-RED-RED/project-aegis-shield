@@ -158,8 +158,7 @@ class TestDetectionCallback:
         rid_frame.lon = -71.0
         rid_frame.timestamp = time.time()
 
-        # Craft a valid NAN action frame header so _process passes all checks
-        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
+        raw_bytes = b"\x00" * 25
 
         from scapy.all import Dot11, RadioTap, Raw
         dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
@@ -175,7 +174,7 @@ class TestDetectionCallback:
         pkt.__getitem__ = MagicMock(side_effect=getitem)
 
         with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
-             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+             patch.object(scanner, "extract_nan_rid_payload", return_value=raw_bytes):
             scanner._process(pkt)
 
         call_kwargs = scanner.publisher.publish_detection.call_args
@@ -190,7 +189,7 @@ class TestDetectionCallback:
         rid_frame.lon = -71.0
         rid_frame.timestamp = time.time()
 
-        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
+        raw_bytes = b"\x00" * 25
 
         from scapy.all import Dot11, RadioTap, Raw
         dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
@@ -206,7 +205,7 @@ class TestDetectionCallback:
         pkt.__getitem__ = MagicMock(side_effect=getitem)
 
         with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
-             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+             patch.object(scanner, "extract_nan_rid_payload", return_value=raw_bytes):
             scanner._process(pkt)
 
         call_kwargs = scanner.publisher.publish_detection.call_args
@@ -344,7 +343,8 @@ def _make_rid_ie_info(oui=None, ie_type=None, rid_data=None):
     oui      = oui      or RID_BEACON_OUI_ASTM
     ie_type  = ie_type  if ie_type is not None else RID_BEACON_IE_TYPE
     rid_data = rid_data or (b"\x00" * 25)
-    return oui + bytes([ie_type]) + rid_data
+    counter  = b"\x07"   # ASTM message counter byte precedes the payload
+    return oui + bytes([ie_type]) + counter + rid_data
 
 
 def _beacon_pkt(ie_chain, src_mac="aa:bb:cc:dd:ee:ff", rssi=-65):
@@ -483,7 +483,7 @@ class TestBeaconDetection:
         assert kwargs["transport"] == "wifi_beacon"
 
     def test_nan_detection_tagged_as_wifi_nan(self):
-        """Existing NAN Action frame path still tags detections as 'wifi_nan'."""
+        """NAN Service Discovery path tags detections as 'wifi_nan'."""
         scanner, _ = _make_scanner(band="2.4")
         rid_frame = MagicMock()
         rid_frame.drone_id = "NAN-DRONE-01"
@@ -491,23 +491,20 @@ class TestBeaconDetection:
         rid_frame.lon = -71.0
         rid_frame.timestamp = time.time()
 
-        raw_bytes = bytes([0x04, 0x09, 0xFA, 0x0B, 0xBE, 0x0D]) + b"\x00" * 20
-
-        from scapy.all import Dot11, RadioTap, Raw
+        from scapy.all import Dot11, RadioTap
         dot11 = MagicMock(addr2="aa:bb:cc:dd:ee:ff")
 
         def getitem(layer):
             if layer is Dot11:    return dot11
             if layer is RadioTap: return MagicMock(dBm_AntSignal=-70)
-            if layer is Raw:      return MagicMock()
             return MagicMock()
 
         pkt = MagicMock()
         pkt.haslayer.return_value = True
         pkt.__getitem__ = MagicMock(side_effect=getitem)
 
-        with patch.object(scanner._parser, "parse", return_value=[rid_frame]), \
-             patch("scanner.wifi_nan.bytes", return_value=raw_bytes):
+        with patch.object(scanner, "extract_nan_rid_payload", return_value=b"\x00" * 25), \
+             patch.object(scanner._parser, "parse", return_value=[rid_frame]):
             scanner._process(pkt)
 
         kwargs = scanner.publisher.publish_detection.call_args.kwargs

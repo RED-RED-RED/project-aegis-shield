@@ -5,15 +5,21 @@ Captures Wi-Fi Remote ID frames in monitor mode using Scapy.
 
 Supports two ASTM F3411-22a Wi-Fi transport types simultaneously:
 
-  Wi-Fi NAN Action frames (802.11 Action, subtype 13):
-    - Category: 0x04 (Public), Code: 0x09 (NAN)
-    - OUI: FA:0B:BE  (ASTM / Remote ID)
+  Wi-Fi NAN Service Discovery frames (802.11 Action, subtype 13):
+    - Public Action: Category 0x04, Action 0x09 (vendor specific)
+    - OUI 50:6F:9A (Wi-Fi Alliance), OUI type 0x13 (NAN)
+    - Service Descriptor Attribute (0x03) with Service ID 88:69:19:9D:92:09
+      (first 6 bytes of SHA-256("org.opendroneid.remoteid"))
+    - Service Info = 1-byte message counter + ODID message pack
     - Detections tagged transport="wifi_nan"
 
   Wi-Fi Beacon frames (802.11 Management, subtype 8):
-    - Vendor-specific IE (type 221) with OUI FA:0B:BC (ASTM) or
-      6A:5C:35 (OpenDroneID / ESP32 uav_electronic_ids)
+    - Vendor-specific IE (221) with OUI FA:0B:BC, OUI type 0x0D
+    - IE body = OUI(3) + type(1) + message counter(1) + ODID message pack
     - Detections tagged transport="wifi_beacon"
+
+  Layouts match opendroneid-core-c libopendroneid/wifi.c (the reference
+  implementation used by compliant transmitters).
 
 Hardware: Alfa AWUS036ACM (mt76x2u driver) — other cards may not
           pass NAN action frames through in monitor mode.
@@ -42,16 +48,23 @@ from publisher.gps import GPSDaemon
 
 log = logging.getLogger("wifi-nan")
 
-# ── Wi-Fi NAN Action frame constants ───────────────────────────────────────
-RID_OUI             = bytes([0xFA, 0x0B, 0xBE])   # ASTM OUI in NAN action frames
-RID_ACTION_CATEGORY = 0x04                         # Public Action
-RID_ACTION_CODE     = 0x09                         # NAN (Neighbor Awareness Networking)
-NAN_SVC_RID_SUBTYPE = 0x0D
+# ── Wi-Fi NAN Service Discovery frame constants ─────────────────────────────
+NAN_ACTION_CATEGORY  = 0x04                              # Public Action
+NAN_ACTION_CODE      = 0x09                              # Vendor specific
+NAN_WFA_OUI          = bytes([0x50, 0x6F, 0x9A])         # Wi-Fi Alliance
+NAN_OUI_TYPE         = 0x13                              # NAN
+NAN_ATTR_SDA         = 0x03                              # Service Descriptor Attribute
+NAN_RID_SERVICE_ID   = bytes([0x88, 0x69, 0x19, 0x9D, 0x92, 0x09])
+
+# Backward-compatible aliases (older code/tests referenced these names)
+RID_ACTION_CATEGORY  = NAN_ACTION_CATEGORY
+RID_ACTION_CODE      = NAN_ACTION_CODE
 
 # ── Wi-Fi Beacon vendor-specific IE constants ───────────────────────────────
 RID_BEACON_OUI_ASTM = bytes([0xFA, 0x0B, 0xBC])   # ASTM F3411 Beacon OUI
 RID_BEACON_OUI_ODID = bytes([0x6A, 0x5C, 0x35])   # OpenDroneID / ESP32 alternative OUI
 RID_BEACON_IE_TYPE  = 0x0D                         # OUI type byte for Remote ID payload
+RID_COUNTER_LEN     = 1                            # message counter precedes the pack
 WIFI_IE_VENDOR_SPECIFIC = 221                      # 802.11 vendor-specific IE element ID
 
 
@@ -170,26 +183,8 @@ class WiFiNANScanner:
             log.debug(f"Packet parse error: {e}")
 
     def _process(self, pkt):
-        if not pkt.haslayer(Raw):
-            return
-
-        payload = bytes(pkt[Raw])
-
-        # Check Action frame header: Category=0x04, Code=0x09
-        if len(payload) < 8:
-            return
-        category, code = payload[0], payload[1]
-        if category != RID_ACTION_CATEGORY or code != RID_ACTION_CODE:
-            return
-
-        # Check OUI
-        oui = payload[2:5]
-        if oui != RID_OUI:
-            return
-
-        # The Remote ID payload starts after the 6-byte NAN header
-        rid_payload = payload[6:]
-        if not rid_payload:
+        rid_payload = self.extract_nan_rid_payload(pkt)
+        if rid_payload is None:
             return
 
         # Extract RSSI from RadioTap header
@@ -227,6 +222,50 @@ class WiFiNANScanner:
                 node_alt=self.gps.alt,
                 band=self.band,
             )
+
+    @staticmethod
+    def extract_nan_rid_payload(pkt) -> Optional[bytes]:
+        """
+        Return the ODID message pack from a NAN Service Discovery frame, or None.
+
+        Action body layout (opendroneid-core-c wifi.c):
+          [0]    category 0x04
+          [1]    action   0x09
+          [2:5]  OUI      50:6F:9A
+          [5]    OUI type 0x13
+          [6:]   NAN attributes: id(1) len(2, LE) value(len)
+
+        Service Descriptor Attribute (id 0x03) value:
+          service_id(6) instance_id(1) requestor_id(1) service_control(1)
+          service_info_len(1) service_info(...)
+        service_info = message_counter(1) + message pack
+        """
+        if not pkt.haslayer(Dot11):
+            return None
+        body = bytes(pkt[Dot11].payload)
+        if len(body) < 6:
+            return None
+        if body[0] != NAN_ACTION_CATEGORY or body[1] != NAN_ACTION_CODE:
+            return None
+        if body[2:5] != NAN_WFA_OUI or body[5] != NAN_OUI_TYPE:
+            return None
+
+        i = 6
+        while i + 3 <= len(body):
+            attr_id  = body[i]
+            attr_len = body[i + 1] | (body[i + 2] << 8)
+            value    = body[i + 3:i + 3 + attr_len]
+            i += 3 + attr_len
+            if attr_id != NAN_ATTR_SDA or len(value) < 10:
+                continue
+            if value[0:6] != NAN_RID_SERVICE_ID:
+                continue
+            si_len = value[9]
+            si     = value[10:10 + si_len]
+            if len(si) <= RID_COUNTER_LEN:
+                return None
+            return si[RID_COUNTER_LEN:]
+        return None
 
     def _process_beacon(self, pkt):
         rid_payload = self._extract_beacon_rid_payload(pkt)
@@ -268,26 +307,27 @@ class WiFiNANScanner:
         """
         Walk the 802.11 information element chain looking for a vendor-specific
         IE (element ID 221) whose OUI matches the ASTM or OpenDroneID Remote ID
-        OUIs.  Returns the RID payload bytes (after the 4-byte OUI+type prefix)
+        OUIs.  Returns the ODID message pack (after OUI, type and counter)
         or None if no matching IE is found.
 
         The IE body layout is:
           [0:3]  OUI (3 bytes)
-          [3]    OUI type byte — must be RID_BEACON_IE_TYPE (0x0D)
-          [4:]   OpenDroneID payload passed directly to the parser
+          [3]    OUI type byte, must be RID_BEACON_IE_TYPE (0x0D)
+          [4]    message counter (increments every transmission)
+          [5:]   ODID message pack passed to the parser
         """
         elt = pkt.getlayer(Dot11Elt)
         while elt is not None:
             if elt.ID == WIFI_IE_VENDOR_SPECIFIC:
                 data = bytes(elt.info)
-                if len(data) >= 4:
+                if len(data) > 4 + RID_COUNTER_LEN:
                     oui     = data[:3]
                     ie_type = data[3]
                     if (
                         oui in (RID_BEACON_OUI_ASTM, RID_BEACON_OUI_ODID)
                         and ie_type == RID_BEACON_IE_TYPE
                     ):
-                        payload = data[4:]
+                        payload = data[4 + RID_COUNTER_LEN:]
                         if payload:
                             return payload
             # Advance to the next IE; stop when payload has no 'ID' attribute

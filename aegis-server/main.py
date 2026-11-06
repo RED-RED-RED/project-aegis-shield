@@ -23,6 +23,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import detections, nodes, alerts, websocket, analysis, integrations
+from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
 from db.database import init_db, close_db
@@ -44,6 +45,8 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    for line in BANNER.splitlines():
+        log.info(line)
     log.info("AEGIS server starting…")
 
     # Initialize TimescaleDB schema

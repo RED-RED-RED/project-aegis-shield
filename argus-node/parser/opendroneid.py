@@ -242,53 +242,56 @@ class OpenDroneIDParser:
 
     def _parse_location(self, frame: RIDFrame, data: bytes):
         """
-        Location (Type 0x1):
-          Byte 0:    header
-          Byte 1:    Status (hi 4b) | HeightType (bit 2) | EW direction (bit 1) | SpeedMult (bit 0)
-          Byte 2:    Track direction (0–359, uint8, degree)
-          Bytes 3–4: Speed (uint16 LE) × 0.25 m/s (or ×0.75 if SpeedMult=1)
-          Bytes 5–6: Vertical speed (int16 LE) × 0.5 m/s
-          Bytes 7–10: Latitude  (int32 LE) × 1e-7 degrees
-          Bytes 11–14: Longitude (int32 LE) × 1e-7 degrees
-          Bytes 15–16: Pressure altitude (uint16 LE): (val - 1000) × 0.5 m, 0xFFFF = unknown
-          Bytes 17–18: Geodetic altitude   (uint16 LE): same encoding
-          Bytes 19–20: Height AGL          (uint16 LE): same encoding
-          Bytes 21: Horiz accuracy | Vert accuracy
-          Bytes 22: Baro accuracy | Speed accuracy
-          Bytes 23–24: Timestamp (uint16 LE) × 0.1 s since last hour
+        Location (Type 0x1), per ODID_Location_encoded in opendroneid-core-c:
+          Byte 0:      header
+          Byte 1:      Status (bits 7-4) | reserved (3) | HeightType (2) |
+                       EWDirection (1) | SpeedMult (0)
+          Byte 2:      Direction (uint8); add 180 when EWDirection = 1
+          Byte 3:      Horizontal speed (uint8): x0.25 m/s, or
+                       x0.75 + 63.75 m/s when SpeedMult = 1
+          Byte 4:      Vertical speed (int8) x0.5 m/s
+          Bytes 5-8:   Latitude  (int32 LE) x1e-7 deg
+          Bytes 9-12:  Longitude (int32 LE) x1e-7 deg
+          Bytes 13-14: Pressure altitude (uint16 LE) x0.5 - 1000 m
+          Bytes 15-16: Geodetic altitude (uint16 LE) x0.5 - 1000 m
+          Bytes 17-18: Height above takeoff/ground (uint16 LE) x0.5 - 1000 m
+          Byte 19:     VertAccuracy | HorizAccuracy
+          Byte 20:     BaroAccuracy | SpeedAccuracy
+          Bytes 21-22: Timestamp (uint16 LE) x0.1 s since the hour
+          Byte 23:     TSAccuracy
+        Invalid markers (direction 361, speed 255 / 63, altitude -1000) map to 0.0.
         """
         status_raw = (data[1] >> 4) & 0x0F
-        speed_mult  = data[1] & 0x01
-        ew_dir      = (data[1] >> 1) & 0x01  # 0=East, 1=West
+        ew_dir     = (data[1] >> 1) & 0x01
+        speed_mult = data[1] & 0x01
 
         try:
             frame.status = OperationalStatus(status_raw).name.lower()
         except ValueError:
             frame.status = "undeclared"
 
-        # Heading
-        frame.heading = float(data[2])
-        if ew_dir:
-            frame.heading = 360.0 - frame.heading  # West-facing correction
+        heading = float(data[2]) + (180.0 if ew_dir else 0.0)
+        frame.heading = heading if heading < 360.0 else 0.0
 
-        # Speeds
-        raw_speed_h = struct.unpack_from("<H", data, 3)[0]
-        multiplier  = 0.75 if speed_mult else 0.25
-        frame.speed_h = round(raw_speed_h * multiplier, 2)
+        raw_speed_h = data[3]
+        if raw_speed_h == 255:
+            frame.speed_h = 0.0
+        elif speed_mult:
+            frame.speed_h = round(raw_speed_h * 0.75 + 255 * 0.25, 2)
+        else:
+            frame.speed_h = round(raw_speed_h * 0.25, 2)
 
-        raw_speed_v = struct.unpack_from("<h", data, 5)[0]   # signed
-        frame.speed_v = round(raw_speed_v * 0.5, 2)
+        raw_speed_v = struct.unpack_from("<b", data, 4)[0]
+        frame.speed_v = 0.0 if raw_speed_v == 126 else round(raw_speed_v * 0.5, 2)
 
-        # Position
-        raw_lat = struct.unpack_from("<i", data, 7)[0]
-        raw_lon = struct.unpack_from("<i", data, 11)[0]
+        raw_lat = struct.unpack_from("<i", data, 5)[0]
+        raw_lon = struct.unpack_from("<i", data, 9)[0]
         frame.lat = round(raw_lat * 1e-7, 7)
         frame.lon = round(raw_lon * 1e-7, 7)
 
-        # Altitudes
-        frame.alt_baro  = self._decode_alt(struct.unpack_from("<H", data, 15)[0])
-        frame.alt_geo   = self._decode_alt(struct.unpack_from("<H", data, 17)[0])
-        frame.height_agl = self._decode_alt(struct.unpack_from("<H", data, 19)[0])
+        frame.alt_baro   = self._decode_alt(struct.unpack_from("<H", data, 13)[0])
+        frame.alt_geo    = self._decode_alt(struct.unpack_from("<H", data, 15)[0])
+        frame.height_agl = self._decode_alt(struct.unpack_from("<H", data, 17)[0])
 
     def _parse_self_id(self, frame: RIDFrame, data: bytes):
         """
@@ -300,13 +303,17 @@ class OpenDroneIDParser:
 
     def _parse_system(self, frame: RIDFrame, data: bytes):
         """
-        System (Type 0x4):
-          Bytes 1–4:  Operator latitude  (int32 LE) × 1e-7
-          Bytes 5–8:  Operator longitude (int32 LE) × 1e-7
-          ... (area count, area radius, ceiling, floor, classification)
+        System (Type 0x4), per ODID_System_encoded:
+          Byte 1:     OperatorLocationType | ClassificationType
+          Bytes 2-5:  Operator latitude  (int32 LE) x1e-7
+          Bytes 6-9:  Operator longitude (int32 LE) x1e-7
+          Bytes 10-16: area count, radius, ceiling, floor
+          Byte 17:    EU category | class
+          Bytes 18-19: Operator geodetic altitude
+          Bytes 20-23: Timestamp
         """
-        raw_lat = struct.unpack_from("<i", data, 1)[0]
-        raw_lon = struct.unpack_from("<i", data, 5)[0]
+        raw_lat = struct.unpack_from("<i", data, 2)[0]
+        raw_lon = struct.unpack_from("<i", data, 6)[0]
         frame.operator_lat = round(raw_lat * 1e-7, 7)
         frame.operator_lon = round(raw_lon * 1e-7, 7)
 
@@ -321,7 +328,11 @@ class OpenDroneIDParser:
 
     @staticmethod
     def _decode_alt(raw: int) -> float:
-        """Convert encoded altitude value to meters. 0xFFFF = unknown."""
-        if raw == 0xFFFF:
-            return float("nan")
+        """
+        Convert encoded altitude to meters (x0.5 - 1000).
+        ODID uses -1000 m (raw 0) as "unknown"; return 0.0 for that so the
+        value stays JSON-safe (NaN is not valid JSON and breaks the server).
+        """
+        if raw == 0 or raw == 0xFFFF:
+            return 0.0
         return round((raw / 2.0) - 1000.0, 1)

@@ -29,7 +29,7 @@ services:
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"    # Remove in production
+      - "127.0.0.1:5432:5432"    # localhost only; use an SSH tunnel for remote DB access
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-ridmesh}"]
       interval: 5s

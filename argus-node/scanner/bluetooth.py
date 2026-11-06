@@ -44,6 +44,14 @@ RID_SERVICE_UUID_STR = "0000fffa-0000-1000-8000-00805f9b34fb"
 
 # Company ID for Remote ID in manufacturer-specific data: 0x02E5 (Bluetooth SIG ASTM)
 RID_COMPANY_ID = 0x02E5
+RID_BT_APP_CODE = 0x0D   # ASTM application code that prefixes the counter
+
+
+def strip_bt_rid_header(data: bytes) -> Optional[bytes]:
+    """Drop the 0x0D app code and message counter that precede the ODID payload."""
+    if len(data) >= 2 and data[0] == RID_BT_APP_CODE:
+        data = data[2:]
+    return data or None
 
 
 class BluetoothScanner:
@@ -150,17 +158,21 @@ class BluetoothScanner:
         Pull the Remote ID byte payload from an advertisement.
         Checks service data (UUID 0xFFFA) and manufacturer-specific data.
         """
-        # Method 1: Service data keyed by 16-bit UUID
+        # Method 1: Service data keyed by 16-bit UUID 0xFFFA.
+        # ASTM F3411 service data body (UUID already stripped by bleak):
+        #   [0] application code 0x0D
+        #   [1] message counter
+        #   [2:] one 25-byte message (BT4 legacy) or a message pack (BT5)
         if adv.service_data:
             for uuid, data in adv.service_data.items():
                 if RID_SERVICE_UUID_STR in uuid.lower() or "fffa" in uuid.lower():
-                    return bytes(data)
+                    return strip_bt_rid_header(bytes(data))
 
         # Method 2: Manufacturer-specific data with ASTM company ID
         if adv.manufacturer_data:
             raw = adv.manufacturer_data.get(RID_COMPANY_ID)
             if raw:
-                return bytes(raw)
+                return strip_bt_rid_header(bytes(raw))
 
         return None
 
