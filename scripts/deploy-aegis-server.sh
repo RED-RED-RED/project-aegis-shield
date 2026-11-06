@@ -33,7 +33,7 @@ DOCKER_DIR="aegis-server/docker"
 
 # ── Argument parsing ─────────────────────────────────────────────────────
 UNATTENDED=false
-OPT_DB_PASS=""; OPT_MQTT_PASS=""; OPT_HOST="0.0.0.0"; OPT_REPO=""
+OPT_DB_PASS=""; OPT_MQTT_PASS=""; OPT_HOST="0.0.0.0"; OPT_REPO=""; OPT_CARTO_KEY=""
 OPT_SKIP_UI=false; OPT_SKIP_DOCKER=false
 
 while [[ $# -gt 0 ]]; do
@@ -41,7 +41,8 @@ while [[ $# -gt 0 ]]; do
     --unattended)    UNATTENDED=true;;
     --db-password)   OPT_DB_PASS="$2";   shift;;
     --mqtt-password) OPT_MQTT_PASS="$2"; shift;;
-    --host)          OPT_HOST="$2";      shift;;
+    --host)          OPT_HOST="$2";      shift;;   # accepted for compatibility, unused
+    --carto-key)     OPT_CARTO_KEY="$2"; shift;;
     --repo)          OPT_REPO="$2";      shift;;
     --skip-ui)       OPT_SKIP_UI=true;;
     --skip-docker)   OPT_SKIP_DOCKER=true;;
@@ -105,12 +106,15 @@ if [[ "$UNATTENDED" == false ]]; then
   done
   echo ""
 
-  read -rp "  Server bind host [0.0.0.0]: " BIND_HOST
-  BIND_HOST="${BIND_HOST:-0.0.0.0}"
+  echo "  CARTO basemap API key (free: https://carto.com/basemaps/apikey/)"
+  echo "  Needed for the dashboard map. Leave blank to keep an existing key."
+  read -rsp "    Key: " CARTO_KEY; echo
+  BIND_HOST="0.0.0.0"
 else
   DB_PASS="${OPT_DB_PASS:-$(gen_password)}"
   MQTT_PASS="${OPT_MQTT_PASS:-$(gen_password)}"
   BIND_HOST="${OPT_HOST}"
+  CARTO_KEY="${OPT_CARTO_KEY}"
 fi
 
 # ── 1/7  Check / install Docker ──────────────────────────────────────────
@@ -189,6 +193,17 @@ if [[ "$OPT_SKIP_UI" == false ]]; then
   fi
 
   cd aegis-shield
+  # Build-time settings for Vite.  Only overwrite when a new key was entered,
+  # so re-running the deploy keeps the existing key.
+  if [[ -n "${CARTO_KEY:-}" ]]; then
+    printf 'VITE_CARTO_API_KEY=%s\n' "$CARTO_KEY" > .env.local
+    chmod 600 .env.local
+    ok "CARTO key saved to aegis-shield/.env.local"
+  elif [[ -f .env.local ]] && grep -q '^VITE_CARTO_API_KEY=.' .env.local; then
+    info "Using existing CARTO key from aegis-shield/.env.local"
+  else
+    warn "No CARTO key set: the map will show \"API KEY REQUIRED\" until you add one"
+  fi
   npm install --silent
   npm run build
   cd ..

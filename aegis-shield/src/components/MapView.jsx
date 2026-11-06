@@ -162,7 +162,15 @@ export default function MapView() {
     const zoom    = saved?.zoom    ?? 5
 
     const map = L.map(mapRef.current, { center, zoom })
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // CARTO raster basemaps require an API key since Sept 2026.  The key is
+    // read at build time from VITE_CARTO_API_KEY (aegis-shield/.env.local,
+    // written by deploy-aegis-server.sh; never commit it).
+    const cartoKey = import.meta.env.VITE_CARTO_API_KEY
+    if (!cartoKey) {
+      console.warn('VITE_CARTO_API_KEY is not set; the CARTO basemap will show "API KEY REQUIRED". See aegis-shield/.env.example.')
+    }
+    const keyParam = cartoKey ? `?key=${encodeURIComponent(cartoKey)}` : ''
+    L.tileLayer(`https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png${keyParam}`, {
       attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       maxZoom: 19,
     }).addTo(map)
