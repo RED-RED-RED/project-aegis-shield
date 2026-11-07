@@ -8,9 +8,15 @@ import { colors } from '../theme/colors'
 
 // ── RF contact marker (SDR-classified link; no exact position) ──────────────
 function rfColor(c) {
-  if (c.correlated === false) return colors.threatHigh        // dark link
-  const s = c.threat_score
+  if (c.correlated === true) return colors.threatLow          // Remote ID lines up
+  // Uncorrelated: color by threat score, so an uncorroborated ISM link (lone
+  // 900 MHz meter, scored low) is muted, not alarming red. Only escalated
+  // dark links (medium/high) read as a threat.
+  const s = c.threat_score ?? 0
   return s >= 70 ? colors.threatHigh : s >= 40 ? colors.threatMed : colors.steelBlueLight
+}
+function rfEscalated(c) {
+  return c.correlated === false && (c.threat_score ?? 0) >= 40
 }
 function rfIcon(c) {
   const color = rfColor(c)
@@ -22,7 +28,7 @@ function rfIcon(c) {
         position:absolute;top:-14px;left:50%;transform:translateX(-50%);
         font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:bold;
         color:${color};background:rgba(21,24,20,0.95);padding:1px 4px;border-radius:2px;
-        border:1px solid ${color};white-space:nowrap;">${label}${c.correlated === false ? ' ⚠' : ''}</div>
+        border:1px solid ${color};white-space:nowrap;">${label}${rfEscalated(c) ? ' ⚠' : ''}</div>
       <div style="width:10px;height:10px;background:${color};opacity:0.85;
         transform:rotate(45deg);border:1px solid ${color};box-shadow:0 0 6px ${color};"></div>
     </div>`
@@ -30,11 +36,13 @@ function rfIcon(c) {
 }
 function rfPopupHtml(c, imperial) {
   const color = rfColor(c)
-  const corr = c.correlated === false
+  const corr = rfEscalated(c)
     ? `<span style="color:${colors.threatHigh}">NO Remote ID — possible non-compliant drone</span>`
-    : c.correlated === true
-      ? `<span style="color:${colors.threatLow}">Correlates with Remote ID ${c.correlated_drone_id || ''}</span>`
-      : '<span style="color:var(--text-muted)">correlation unknown</span>'
+    : c.correlated === false
+      ? '<span style="color:var(--text-muted)">No Remote ID — uncorroborated (likely ground/ISM)</span>'
+      : c.correlated === true
+        ? `<span style="color:${colors.threatLow}">Correlates with Remote ID ${c.correlated_drone_id || ''}</span>`
+        : '<span style="color:var(--text-muted)">correlation unknown</span>'
   return `
     <div style="font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.7;min-width:190px;">
       <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;

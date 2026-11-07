@@ -71,6 +71,7 @@ const css = `
 .pf-sdr   { color: var(--amber); }
 .pf-row.rf { background: rgba(200,146,74,0.05); }
 .pf-dark  { color: var(--threat-high); font-weight: 600; }
+.pf-dark-low { color: var(--muted); }
 .pf-ok    { color: var(--threat-low); }
 .pf-band  {
   display: inline-flex;
@@ -151,7 +152,9 @@ export default function PacketFeed() {
                     {' '}
                     {pkt.correlated
                       ? <span className="pf-ok">[RID ok]</span>
-                      : <span className="pf-dark">[NO RID]</span>}
+                      : (pkt.threat_score ?? 0) >= 40
+                        ? <span className="pf-dark">[NO RID]</span>
+                        : <span className="pf-dark-low">[no RID]</span>}
                   </span>
                 </div>
               )
