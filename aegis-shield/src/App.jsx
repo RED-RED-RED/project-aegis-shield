@@ -7,6 +7,7 @@ import RightPanel  from './components/RightPanel'
 import MapView     from './components/MapView'
 import PacketFeed  from './components/PacketFeed'
 import ThreatPanel from './components/ThreatPanel'
+import SystemView  from './components/SystemView'
 
 const css = `
 .app-shell {
@@ -39,8 +40,8 @@ export default function App() {
 
   useEffect(() => { connect() }, [connect])
 
-  // Threats panel takes full width — hide right panel
-  const fullMain = activePanel === 'threats'
+  // Threats and System take full width — hide right panel
+  const fullMain = activePanel === 'threats' || activePanel === 'system'
 
   return (
     <>
@@ -52,6 +53,7 @@ export default function App() {
           {activePanel === 'map'     && <MapView />}
           {activePanel === 'threats' && <ThreatPanel />}
           {activePanel === 'packets' && <PacketFeed />}
+          {activePanel === 'system'  && <SystemView />}
         </main>
         {!fullMain && <RightPanel />}
       </div>

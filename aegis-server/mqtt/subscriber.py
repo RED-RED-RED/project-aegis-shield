@@ -317,6 +317,27 @@ class MQTTSubscriber:
                 hb.gps.get("survey_complete", False),
             )
 
+            # Append a health-history sample for the System tab (best effort —
+            # a failure here must not drop the heartbeat).
+            try:
+                await conn.execute("""
+                    INSERT INTO node_health
+                        (time, node_id, cpu_pct, mem_pct, disk_pct, temp_c,
+                         uptime_s, satellites, gps_fix)
+                    VALUES (to_timestamp($1), $2, $3, $4, $5, $6, $7, $8, $9)
+                """,
+                    hb.ts, hb.node_id,
+                    hb.system.get("cpu_pct"),
+                    hb.system.get("mem_pct"),
+                    hb.system.get("disk_pct"),
+                    hb.system.get("temp_c"),
+                    hb.system.get("uptime_s"),
+                    hb.gps.get("sats", 0),
+                    hb.gps.get("fix", False),
+                )
+            except Exception as e:
+                log.debug(f"node_health insert skipped: {e}")
+
         # Fire GPS jamming alert if needed
         await self.alert_engine.evaluate_heartbeat(hb)
 

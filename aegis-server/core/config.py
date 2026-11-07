@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # ---- WebSocket ----
     ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms
 
+    # ---- System health ----
+    server_health_interval_s: int = 20         # How often the server samples its own health
+
     # ---- Retention ----
     detection_retention_days: int = 30
     alert_retention_days: int = 90

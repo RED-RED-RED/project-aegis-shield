@@ -328,4 +328,47 @@ async def _create_schema(pool: Pool):
                 ON rf_contacts (last_seen DESC);
         """)
 
+        # ---- node_health time-series (health history for the System tab) ----
+        # One row per heartbeat per node, plus periodic rows for the server
+        # itself (node_id = '__server__'). temp_c/satellites/gps_fix are node-
+        # only; db_ok/mqtt_ok are server-only. Kept ~7 days (retention below).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS node_health (
+                time        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                node_id     TEXT NOT NULL,
+                cpu_pct     REAL,
+                mem_pct     REAL,
+                disk_pct    REAL,
+                temp_c      REAL,
+                uptime_s    INT,
+                satellites  INT,
+                gps_fix     BOOLEAN,
+                db_ok       BOOLEAN,
+                mqtt_ok     BOOLEAN
+            );
+        """)
+        try:
+            await conn.execute("""
+                SELECT create_hypertable(
+                    'node_health', 'time',
+                    chunk_time_interval => INTERVAL '1 day',
+                    if_not_exists => TRUE
+                );
+            """)
+            log.info("TimescaleDB hypertable ready on node_health.time")
+        except Exception as e:
+            log.warning(f"node_health hypertable creation skipped (may already exist): {e}")
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_node_health_node_time
+                ON node_health (node_id, time DESC);
+        """)
+        # Keep ~1 week of health history; drop older chunks automatically.
+        try:
+            await conn.execute("""
+                SELECT add_retention_policy('node_health', INTERVAL '7 days',
+                                            if_not_exists => TRUE);
+            """)
+        except Exception as e:
+            log.warning(f"node_health retention policy skipped: {e}")
+
         log.info("Database schema ready.")

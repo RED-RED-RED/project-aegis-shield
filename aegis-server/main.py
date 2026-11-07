@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detections, nodes, alerts, websocket, analysis, integrations, rf
+from api.routes import detections, nodes, alerts, websocket, analysis, integrations, rf, system
 from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
@@ -59,14 +59,20 @@ async def lifespan(app: FastAPI):
     app.state.mqtt = mqtt
     log.info(f"MQTT subscriber connecting to {settings.mqtt_host}:{settings.mqtt_port}")
 
+    # Sample the server's own health into node_health for the System tab
+    from core.server_health import run_sampler
+    health_task = asyncio.create_task(
+        run_sampler(settings.server_health_interval_s), name="server-health")
+
     yield  # Server is running
 
     log.info("Shutting down…")
-    mqtt_task.cancel()
-    try:
-        await mqtt_task
-    except asyncio.CancelledError:
-        pass
+    for task in (mqtt_task, health_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     await close_db()
     log.info("Server stopped.")
 
@@ -98,6 +104,7 @@ app.include_router(alerts.router,     prefix="/api/alerts",     tags=["alerts"],
 app.include_router(analysis.router,      prefix="/api/analysis",      tags=["analysis"],      dependencies=_auth)
 app.include_router(integrations.router,  prefix="/api/integrations",  tags=["integrations"],  dependencies=_auth)
 app.include_router(rf.router,             prefix="/api/rf",            tags=["rf"],            dependencies=_auth)
+app.include_router(system.router,         prefix="/api/system",        tags=["system"],        dependencies=_auth)
 
 # WebSocket — protected by same API key
 app.include_router(websocket.router, tags=["websocket"], dependencies=_auth)
