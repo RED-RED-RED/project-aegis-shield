@@ -51,6 +51,8 @@ export const useStore = create((set, get) => ({
   rfContacts:    {},      // contact_id → RFContact (SDR-classified links)
   detectionRate: 0,
   lastStateTs:   null,
+  liveActiveS:   120,     // age (s) under which a contact is "live"; older = stale/dimmed
+  dismissed:     {},      // id → true: manually hidden from the live map until it drops out
 
   // ── Threat / MLAT (polled from REST, merged into drones) ────────────────
   threatData:    {},      // drone_id → { threat_score, threat_level, threat_factors,
@@ -65,7 +67,7 @@ export const useStore = create((set, get) => ({
   // ── UI ──────────────────────────────────────────────────────────────────
   selectedDroneId: null,
   selectedNodeId:  null,
-  activePanel:     'map',   // 'map' | 'threats' | 'packets' | 'arch'
+  activePanel:     'map',   // 'map' | 'threats' | 'packets'
   showMlatLayer:   true,    // toggle MLAT overlays on map
 
   // ── WebSocket ───────────────────────────────────────────────────────────
@@ -121,10 +123,29 @@ export const useStore = create((set, get) => ({
     for (const n of payload.nodes || []) nodes[n.node_id] = n
     const rfContacts = {}
     for (const c of payload.rf_contacts || []) rfContacts[c.contact_id] = c
-    set({ drones, nodes, rfContacts,
+
+    // Keep a dismissal only while its target is still present. Once a contact
+    // drops out of the live set, clear its dismissal so that if it returns
+    // later (a genuinely new pass) it shows again.
+    const present = new Set([...Object.keys(drones), ...Object.keys(rfContacts)])
+    const prevDismissed = get().dismissed
+    const dismissed = {}
+    for (const id of Object.keys(prevDismissed)) {
+      if (present.has(id)) dismissed[id] = true
+    }
+
+    set({ drones, nodes, rfContacts, dismissed,
           alerts: payload.recent_alerts || [],
           detectionRate: payload.detection_rate || 0,
+          liveActiveS: payload.live_active_s ?? get().liveActiveS,
           lastStateTs: payload.ts })
+  },
+
+  // Hide a drone or RF contact from the live map/lists until it drops out of
+  // the live set (then a fresh detection brings it back).
+  dismissContact(id) {
+    if (!id) return
+    set(s => ({ dismissed: { ...s.dismissed, [id]: true } }))
   },
 
   _addPacket(pkt) {
@@ -274,8 +295,11 @@ export const useStore = create((set, get) => ({
 
   // ── Alert actions ────────────────────────────────────────────────────────
   async acknowledgeAlert(id) {
-    // Optimistic update
+    // Optimistic update. If the alert points at an RF contact (ref_id), also
+    // hide that contact's map point so acknowledging clears the clutter.
+    const alert = get().alerts.find(a => a.id === id)
     set(s => ({ alerts: s.alerts.map(a => a.id === id ? { ...a, acknowledged: true } : a) }))
+    if (alert?.ref_id) get().dismissContact(alert.ref_id)
     try { await fetch(`/api/alerts/${id}/acknowledge`, { method: 'POST' }) } catch {}
   },
   async acknowledgeAll() {
@@ -294,8 +318,13 @@ export const useStore = create((set, get) => ({
 // ── Selectors ──────────────────────────────────────────────────────────────
 
 export const selectActiveDrones = s =>
-  Object.values(s.drones).sort((a, b) =>
-    (b.threat_score ?? -1) - (a.threat_score ?? -1))
+  Object.values(s.drones)
+    .filter(d => !s.dismissed[d.drone_id])
+    .sort((a, b) => (b.threat_score ?? -1) - (a.threat_score ?? -1))
+
+// A contact is "stale" once its age exceeds the live-active window; the UI dims
+// it rather than removing it (the server removes it past live_window_s).
+export const isStale = (c, liveActiveS) => (c?.age_s ?? 0) > (liveActiveS ?? 120)
 
 export const selectAllNodes = s =>
   Object.values(s.nodes).sort((a, b) => a.node_id.localeCompare(b.node_id))
@@ -317,11 +346,12 @@ export const selectMlatDrones = s =>
 
 export const selectRfContacts = s =>
   Object.values(s.rfContacts)
+    .filter(c => !s.dismissed[c.contact_id])
     .sort((a, b) => (b.threat_score ?? -1) - (a.threat_score ?? -1))
 
 // "Dark" links: a classified drone link with no Remote ID broadcast correlating.
 export const selectDarkContacts = s =>
-  Object.values(s.rfContacts).filter(c => c.correlated === false)
+  Object.values(s.rfContacts).filter(c => c.correlated === false && !s.dismissed[c.contact_id])
 
 export const RF_SIGNAL_LABELS = {
   dji_ocusync:      'DJI OcuSync',

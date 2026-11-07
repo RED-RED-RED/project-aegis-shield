@@ -252,6 +252,7 @@ class AlertEngine:
                         f"Possible non-compliant drone."
                     ),
                     "drone_id": None,
+                    "ref_id": contact_id,   # lets the UI hide this contact on ack
                     "node_id": event.node_id,
                     "lat": event.node_position.lat,
                     "lon": event.node_position.lon,
@@ -275,15 +276,16 @@ class AlertEngine:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow("""
-                INSERT INTO alerts (level, category, drone_id, node_id, title, description, lat, lon)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                INSERT INTO alerts (level, category, drone_id, node_id, title, description, lat, lon, ref_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id, created_at, level, category, drone_id, node_id,
-                          title, description, lat, lon, acknowledged
+                          title, description, lat, lon, acknowledged, ref_id
             """,
                 alert["level"], alert["category"],
                 alert.get("drone_id"), alert.get("node_id"),
                 alert["title"], alert.get("description"),
                 alert.get("lat"), alert.get("lon"),
+                alert.get("ref_id"),
             )
 
         log.info(f"Alert [{alert['level'].upper()}] {alert['title']}")

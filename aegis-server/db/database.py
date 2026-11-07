@@ -266,6 +266,13 @@ async def _create_schema(pool: Pool):
             );
         """)
 
+        # ref_id ties an alert back to the thing it is about when that is not a
+        # drone_id — e.g. an RF contact_id for an rf_no_rid alert — so the UI can
+        # hide that contact's map point when the alert is acknowledged.
+        await conn.execute(
+            "ALTER TABLE alerts ADD COLUMN IF NOT EXISTS ref_id TEXT;"
+        )
+
         # Index for alert list queries (unacknowledged alerts, sorted by time)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_alerts_unacked_created

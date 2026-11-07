@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useStore, selectActiveDrones, selectAllNodes, selectRfContacts,
+import { useStore, selectActiveDrones, selectAllNodes, selectRfContacts, isStale,
          RF_SIGNAL_LABELS, RF_BAND_LABELS, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
 import { colors } from '../theme/colors'
 
@@ -208,6 +208,7 @@ export default function MapView() {
   const showMlat    = useStore(s => s.showMlatLayer)
   const selectDrone = useStore(s => s.selectDrone)
   const toggleMlat  = useStore(s => s.toggleMlatLayer)
+  const liveActiveS = useStore(s => s.liveActiveS)
   const imperial    = useUnits()
 
   useEffect(() => {
@@ -261,6 +262,8 @@ export default function MapView() {
       if (!drone.lat || !drone.lon) continue
       const ll = [drone.lat, drone.lon]
       const id = drone.drone_id
+      const stale = isStale(drone, liveActiveS)
+      const op = stale ? 0.4 : 1.0
 
       // Track
       if (!trackPtsRef.current[id]) trackPtsRef.current[id] = []
@@ -288,6 +291,8 @@ export default function MapView() {
           .addTo(map)
         markersRef.current[id] = m
       }
+      markersRef.current[id].setOpacity(op)
+      if (tracksRef.current[id]) tracksRef.current[id].setStyle({ opacity: stale ? 0.25 : 1 })
       if (markersRef.current[id].isPopupOpen()) {
         markersRef.current[id].setPopupContent(dronePopupHtml(drone, imperial))
       }
@@ -336,7 +341,7 @@ export default function MapView() {
         }
       }
     }
-  }, [drones, showMlat, selectDrone, imperial])
+  }, [drones, showMlat, selectDrone, imperial, liveActiveS])
 
   // ── RF contacts (SDR links) ───────────────────────────────────────────────
   useEffect(() => {
@@ -358,9 +363,11 @@ export default function MapView() {
       const ll = [c.est_lat, c.est_lon]
       const color = rfColor(c)
       const radius = Math.max(c.est_radius_m ?? 500, 50)
+      const stale = isStale(c, liveActiveS)
 
       if (rfCircRef.current[id]) {
-        rfCircRef.current[id].setLatLng(ll).setRadius(radius).setStyle({ color, fillColor: color })
+        rfCircRef.current[id].setLatLng(ll).setRadius(radius)
+          .setStyle({ color, fillColor: color, opacity: stale ? 0.3 : 1, fillOpacity: stale ? 0.02 : 0.05 })
       } else {
         rfCircRef.current[id] = L.circle(ll, {
           radius, color, weight: 1, dashArray: '2 6',
@@ -377,8 +384,9 @@ export default function MapView() {
           .bindPopup(rfPopupHtml(c, imperial), { maxWidth: 260 })
           .addTo(map)
       }
+      rfMarkRef.current[id].setOpacity(stale ? 0.4 : 1)
     }
-  }, [rfContacts, imperial])
+  }, [rfContacts, imperial, liveActiveS])
 
   useEffect(() => {
     const map = leafletRef.current

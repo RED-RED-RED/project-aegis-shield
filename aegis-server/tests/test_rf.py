@@ -260,7 +260,10 @@ class TestRFAlert:
                                    "detecting_nodes": ["A", "B"], "detection_count": 8})
         await engine.evaluate_rf(event, "c1", threat, correlated=False, corr_drone_id=None)
         engine._emit.assert_awaited_once()
-        assert engine._emit.await_args.args[0]["category"] == "rf_no_rid"
+        alert = engine._emit.await_args.args[0]
+        assert alert["category"] == "rf_no_rid"
+        # ref_id ties the alert to its contact so the UI can hide it on ack.
+        assert alert["ref_id"] == "c1"
 
     async def test_correlated_link_no_alert(self, engine):
         event = make_rf_event(signal_type="dji_ocusync", confidence=0.9)

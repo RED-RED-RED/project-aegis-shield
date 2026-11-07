@@ -54,6 +54,14 @@ class Settings(BaseSettings):
     rf_alert_min_confidence: float = 0.6       # Below this, don't raise an RF alert
     rf_contact_ttl_s: int = 120                # Drop RF contacts from live state after this
 
+    # ---- Live map freshness ----
+    # A contact (drone or RF) shows solid when seen within live_active_s, dims
+    # when older, and drops off the live map entirely past live_window_s. Kept
+    # short so the map reflects what is flying now; everything stays in the DB
+    # for the Flight History view regardless.
+    live_window_s: int = 900                   # Remove from live map after this (15 min)
+    live_active_s: int = 120                   # Within this = live/solid; older = stale/dimmed
+
     # ---- WebSocket ----
     ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms
 

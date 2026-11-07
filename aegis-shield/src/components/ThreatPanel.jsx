@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { useStore, selectActiveDrones, selectRfContacts, selectDarkContacts, FACTOR_LABELS, threatColor, threatBg, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
+import { useStore, selectActiveDrones, selectRfContacts, selectDarkContacts, isStale, FACTOR_LABELS, threatColor, threatBg, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
 
 const css = `
 .tp-wrap {
@@ -55,7 +55,7 @@ const css = `
 }
 .tp-rf-row {
   display: grid;
-  grid-template-columns: 1fr 44px 56px 52px 28px;
+  grid-template-columns: 1fr 44px 56px 52px 28px 18px;
   gap: 0 8px;
   padding: 2px 14px;
   font-family: var(--mono);
@@ -72,6 +72,11 @@ const css = `
 .tp-stat-sub { font-size: 0.6em; color: var(--muted); font-weight: 500; margin-left: 4px; vertical-align: middle; }
 .tp-rf-ok   { color: var(--threat-low); }
 .tp-rf-score { text-align: right; font-weight: 700; }
+.tp-dismiss {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 0; text-align: center;
+}
+.tp-dismiss:hover { color: var(--threat-high); }
 
 .tp-body {
   display: grid;
@@ -267,6 +272,8 @@ export default function ThreatPanel() {
   const drones     = useStore(selectActiveDrones)
   const rfContacts = useStore(selectRfContacts)
   const darkLinks  = useStore(selectDarkContacts)
+  const dismiss    = useStore(s => s.dismissContact)
+  const liveActiveS = useStore(s => s.liveActiveS)
   const [selId, setSel] = useState(null)
   const selectDrone = useStore(s => s.selectDrone)
   const imperial   = useUnits()
@@ -329,7 +336,7 @@ export default function ThreatPanel() {
           <div className="tp-rf">
             <div className="tp-rf-head">RF Contacts (SDR)</div>
             {rfContacts.slice(0, 8).map(c => (
-              <div key={c.contact_id} className="tp-rf-row">
+              <div key={c.contact_id} className="tp-rf-row" style={{ opacity: isStale(c, liveActiveS) ? 0.5 : 1 }}>
                 <span className="tp-rf-sig">{c.signal_type}</span>
                 <span className="tp-rf-band">{c.band}</span>
                 <span className="tp-rf-rssi">{c.last_rssi != null ? Math.round(c.last_rssi)+'dBm' : '—'}</span>
@@ -341,6 +348,8 @@ export default function ThreatPanel() {
                 <span className="tp-rf-score" style={{ color: threatColor(c.threat_score) }}>
                   {c.threat_score != null ? c.threat_score.toFixed(0) : '—'}
                 </span>
+                <button className="tp-dismiss" title="Hide from live map"
+                        onClick={() => dismiss(c.contact_id)}>×</button>
               </div>
             ))}
           </div>

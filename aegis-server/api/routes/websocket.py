@@ -78,17 +78,19 @@ async def _build_live_state() -> dict:
     """Query current state from DB for the live AEGIS Shield snapshot."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        # Drones seen in last 24 hours (includes stale for history)
-        drone_rows = await conn.fetch("""
+        # Drones seen within the live window (older ones live only in history).
+        # age_s lets the UI dim a contact once it passes live_active_s.
+        drone_rows = await conn.fetch(f"""
             SELECT drone_id, first_seen, last_seen,
                    last_node_id, last_transport, last_rssi,
                    lat, lon, alt_baro, alt_geo, height_agl,
                    speed_h, speed_v, heading, status,
                    id_type, ua_type, operator_id,
                    operator_lat, operator_lon, description,
-                   has_valid_rid, detection_count, detecting_nodes
+                   has_valid_rid, detection_count, detecting_nodes,
+                   EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS age_s
             FROM drone_tracks
-            WHERE last_seen > NOW() - INTERVAL '24 hours'
+            WHERE last_seen > NOW() - INTERVAL '{settings.live_window_s} seconds'
             ORDER BY last_seen DESC
         """)
 
@@ -105,7 +107,7 @@ async def _build_live_state() -> dict:
         alert_rows = await conn.fetch("""
             SELECT id, created_at, level, category,
                    drone_id, node_id, title, description,
-                   lat, lon, acknowledged, acknowledged_at
+                   lat, lon, acknowledged, acknowledged_at, ref_id
             FROM alerts
             WHERE acknowledged = FALSE
             ORDER BY created_at DESC
@@ -122,14 +124,15 @@ async def _build_live_state() -> dict:
 
         # Active RF contacts (SDR-classified links)
         try:
-            rf_rows = await conn.fetch("""
+            rf_rows = await conn.fetch(f"""
                 SELECT contact_id, first_seen, last_seen, signal_type, band,
                        center_freq_hz, bandwidth_hz, last_rssi, best_rssi,
                        confidence, hop_rate_hz, detecting_nodes, detection_count,
                        correlated, correlated_drone_id, compliant,
-                       est_lat, est_lon, est_radius_m, threat_score, threat_level
+                       est_lat, est_lon, est_radius_m, threat_score, threat_level,
+                       EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS age_s
                 FROM rf_contacts
-                WHERE last_seen > NOW() - INTERVAL '2 minutes'
+                WHERE last_seen > NOW() - INTERVAL '{settings.live_window_s} seconds'
                 ORDER BY threat_score DESC NULLS LAST, last_seen DESC
             """)
         except Exception:
@@ -141,6 +144,7 @@ async def _build_live_state() -> dict:
         "recent_alerts":  [_row_to_dict(r) for r in alert_rows],
         "rf_contacts":    [_row_to_dict(r) for r in rf_rows],
         "detection_rate": det_rate,
+        "live_active_s":  settings.live_active_s,
         "ts":             time.time(),
     }
 

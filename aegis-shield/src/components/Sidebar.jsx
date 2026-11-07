@@ -195,7 +195,6 @@ export default function Sidebar() {
             { id: 'map',     icon: '◈', label: 'Live Map' },
             { id: 'threats', icon: '◉', label: 'Threats' },
             { id: 'packets', icon: '≋', label: 'Packet Feed' },
-            { id: 'arch',    icon: '⬡', label: 'Architecture' },
           ].map(item => (
             <div
               key={item.id}

@@ -6,7 +6,6 @@ import Sidebar     from './components/Sidebar'
 import RightPanel  from './components/RightPanel'
 import MapView     from './components/MapView'
 import PacketFeed  from './components/PacketFeed'
-import ArchView    from './components/ArchView'
 import ThreatPanel from './components/ThreatPanel'
 
 const css = `
@@ -53,7 +52,6 @@ export default function App() {
           {activePanel === 'map'     && <MapView />}
           {activePanel === 'threats' && <ThreatPanel />}
           {activePanel === 'packets' && <PacketFeed />}
-          {activePanel === 'arch'    && <ArchView />}
         </main>
         {!fullMain && <RightPanel />}
       </div>

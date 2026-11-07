@@ -23,7 +23,7 @@ async def list_alerts(
         rows = await conn.fetch("""
             SELECT id, created_at, level, category,
                    drone_id, node_id, title, description,
-                   lat, lon, acknowledged, acknowledged_at
+                   lat, lon, acknowledged, acknowledged_at, ref_id
             FROM alerts
             WHERE ($1::text IS NULL OR level = $1)
               AND ($2::text IS NULL OR category = $2)
