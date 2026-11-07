@@ -62,6 +62,7 @@ class NodeConfig:
     bt_enabled: bool = True
     bt_hci_index: int = 1                # nRF52840 USB dongle (hci1); Pi onboard BT is hci0
     bt_coded_phy: bool = True            # BT5 Long Range — requires nRF52840
+    bt_backend: str = "auto"             # auto | hci | bleak  (hci = direct controller access, see scanner/hci_le.py)
 
     # ---- SDR ----
     sdr_enabled: bool = False            # Optional; enable if RTL-SDR is attached
@@ -73,6 +74,10 @@ class NodeConfig:
     heartbeat_interval_s: int = 10
     dedup_window_s: float = 2.0          # Suppress duplicate detections within this window
     max_queue_size: int = 1000
+
+
+# YAML section name -> dataclass field prefix ("" = no prefix)
+_SECTION_ALIASES = {"agent": "", "bluetooth": "bt"}
 
 
 def load_config() -> NodeConfig:
@@ -93,7 +98,8 @@ def load_config() -> NodeConfig:
     for section, values in data.items():
         if isinstance(values, dict):
             for k, v in values.items():
-                key = f"{section}_{k}" if section != "agent" else k
+                prefix = _SECTION_ALIASES.get(section, section)
+                key = f"{prefix}_{k}" if prefix else k
                 if hasattr(cfg, key):
                     setattr(cfg, key, v)
         elif hasattr(cfg, section):

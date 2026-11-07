@@ -56,6 +56,9 @@ fi
 
 # ---- Bluetooth ----
 # Prefer the nRF52840 USB dongle (hci1) over the Pi's onboard adapter (hci0).
+# Note: the agent then takes hci1 exclusively over an HCI user channel
+# (scanner/hci_le.py), so BlueZ tools won't see it while the agent runs.
+# Bringing it up here still matters for rfkill state and the bleak fallback.
 # The nRF52840 is required for BT5 Long Range (Coded PHY).  If the dongle is
 # absent we fall back to hci0 so the service still starts in degraded mode.
 if hciconfig hci1 2>/dev/null | grep -q "hci1"; then

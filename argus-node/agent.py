@@ -6,10 +6,10 @@ Main entry point. Starts all scanner threads and the MQTT publisher.
 Runs on each Raspberry Pi ARGUS node.
 
 Hardware expected:
-  - Alfa AWUS036ACM  (Wi-Fi, monitor mode)   → wlan1mon
-  - nRF52840 USB     (Bluetooth 4/5 LR)      → hci0
-  - u-blox NEO-M8N   (GPS, serial)           → /dev/ttyAMA0
-  - RTL-SDR v3       (optional SDR)          → auto-detect
+  - Alfa AWUS036ACM  (Wi-Fi, monitor mode)   → wlan1
+  - nRF52840 USB     (Bluetooth 4/5 LR)      → hci1 (taken from BlueZ while running)
+  - u-blox NEO-M9N   (GPS, USB)              → /dev/ttyGPS
+  - RTL-SDR Blog V4  (optional SDR)          → device 0
 
 Author: AEGIS project
 """
@@ -129,7 +129,7 @@ def main():
     if wifi_bands_active:
         log.info(f"WiFi NAN scanning: {', '.join(wifi_bands_active)}")
 
-    # Bluetooth 4/5 LR scanner (uses asyncio internally via bleak)
+    # Bluetooth 4/5 LR scanner (direct HCI on the dongle, bleak fallback)
     if cfg.bt_enabled:
         bt = BluetoothScanner(
             hci_index=cfg.bt_hci_index,
@@ -138,6 +138,7 @@ def main():
             node_id=cfg.node_id,
             stop_event=_stop_event,
             enable_coded_phy=cfg.bt_coded_phy,  # BT5 LR — nRF52840 only
+            backend=cfg.bt_backend,
         )
         t = threading.Thread(target=bt.run_sync, name="bluetooth", daemon=True)
         threads.append(t)

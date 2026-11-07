@@ -49,6 +49,16 @@ class IDType(IntEnum):
     SPECIFIC_SESSION  = 4
 
 
+# Which BasicID wins when a drone sends more than one
+_ID_PRIORITY = {
+    IDType.SERIAL_NUMBER:    4,
+    IDType.CAA_REGISTRATION: 3,
+    IDType.UTM_ASSIGNED:     2,
+    IDType.SPECIFIC_SESSION: 1,
+}
+_ID_TYPE_RAW = {t.name.lower(): int(t) for t in IDType}
+
+
 class UAType(IntEnum):
     NONE              = 0
     AEROPLANE         = 1
@@ -125,6 +135,30 @@ class OpenDroneIDParser:
     Stateless parser — call parse() with raw bytes.
     Returns a list of RIDFrame objects (usually 1, but a MessagePack can yield many).
     """
+
+    def apply(self, frame: RIDFrame, data: bytes) -> bool:
+        """
+        Merge one message or a message pack into an existing frame.
+        Used to build up a drone's state from BT4 adverts, which carry one
+        message each.  Returns False if the data isn't a usable message.
+        """
+        if not data or len(data) < FRAME_LEN:
+            return False
+        if (data[0] >> 4) & 0x0F == MsgType.MESSAGE_PACK:
+            if len(data) < 3:
+                return False
+            size  = data[1] if data[1] == FRAME_LEN else FRAME_LEN
+            count = min(data[2], 9)
+            applied = False
+            for i in range(count):
+                off = 3 + i * size
+                if off + size > len(data):
+                    break
+                self._apply_message(frame, data[off:off + size])
+                applied = True
+            return applied
+        self._apply_message(frame, data[:FRAME_LEN])
+        return True
 
     def parse(self, data: bytes, transport: str = "") -> list[RIDFrame]:
         """
@@ -227,18 +261,28 @@ class OpenDroneIDParser:
         id_type_raw = (data[1] >> 4) & 0x0F
         ua_type_raw = data[1] & 0x0F
 
+        raw_id = data[2:22]
+        new_id = raw_id.rstrip(b"\x00").decode("ascii", errors="replace").strip()
+        if not new_id:
+            return
+
+        # A drone may send two BasicIDs (e.g. serial number + CAA registration).
+        # Keep the most specific one so the track ID doesn't flip between them.
+        new_rank = _ID_PRIORITY.get(id_type_raw, 0)
+        if frame.drone_id and new_id != frame.drone_id:
+            cur_rank = _ID_PRIORITY.get(_ID_TYPE_RAW.get(frame.id_type, 0), 0)
+            if new_rank < cur_rank:
+                return
+
+        frame.drone_id = new_id
         try:
             frame.id_type = IDType(id_type_raw).name.lower()
         except ValueError:
             frame.id_type = f"unknown_{id_type_raw}"
-
         try:
             frame.ua_type = UAType(ua_type_raw).name.lower()
         except ValueError:
             frame.ua_type = f"unknown_{ua_type_raw}"
-
-        raw_id = data[2:22]
-        frame.drone_id = raw_id.rstrip(b"\x00").decode("ascii", errors="replace").strip()
 
     def _parse_location(self, frame: RIDFrame, data: bytes):
         """

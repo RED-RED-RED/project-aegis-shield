@@ -1,15 +1,16 @@
 """
 scanner/sdr.py
 ==============
-Optional RTL-SDR scanner for passive RF fingerprinting at 2.4 GHz.
+Optional RTL-SDR energy scanner for sub-1.8 GHz drone control/video bands
+(433 / 868 / 915 MHz and 1.2 GHz; see SWEEP_FREQS).
 
-This does NOT decode Remote ID directly — that's handled by the Wi-Fi and BT
-scanners. Instead, the SDR detects RF energy bursts that correlate in time and
-frequency with known drone control links (e.g. DJI OcuSync on 2.4 GHz), which
-can help identify unlicensed or non-RID drones.
+This does NOT decode Remote ID — the Wi-Fi and BT scanners do that.  RTL-SDR
+tuners top out around 1.77 GHz, so 2.4 / 5.8 GHz links (DJI OcuSync/O4,
+ExpressLRS 2.4, most FPV video) are out of reach.  Bursts are published as
+rf_event messages; the server stores them but does not yet correlate them.
 
-Fingerprinting approach:
-  1. IQ sample the 2.4 GHz band
+Approach:
+  1. IQ sample each band in SWEEP_FREQS
   2. Run energy detection across 2MHz sub-bands
   3. Publish anomalous energy bursts to MQTT for central correlation
   4. Central server cross-references with RID detections by timestamp/position
@@ -55,7 +56,7 @@ ENERGY_THRESH  = 15.0        # dB above noise floor to flag
 
 class SDRScanner:
     """
-    RTL-SDR energy scanner. Sweeps 2.4 GHz sub-bands and publishes
+    RTL-SDR energy scanner. Sweeps the SWEEP_FREQS bands and publishes
     anomalous RF bursts to the AEGIS platform for correlation.
     """
 

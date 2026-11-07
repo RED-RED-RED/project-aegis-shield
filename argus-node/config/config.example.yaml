@@ -46,6 +46,7 @@ bt:
   enabled: true
   hci_index: 1              # nRF52840 USB dongle — Pi onboard BT enumerates as hci0
   coded_phy: true           # BT5 Long Range — disable if dongle doesn't support it
+  backend: auto             # auto: direct HCI on the dongle, bleak fallback | hci | bleak
 
 # ---- RTL-SDR (optional) ----
 sdr:
