@@ -92,6 +92,45 @@ class TestRFScoring:
                                   "detecting_nodes": ["A", "B", "C"], "detection_count": 3})
         assert three.score > one.score
 
+    def test_lone_900_link_capped_low(self):
+        """A strong, sustained 900 MHz control link from a single node stays
+        'low' — on its own it can't be told from a smart meter."""
+        t = score_rf_contact({
+            "signal_type": "elrs_900", "band": "900", "correlated": False,
+            "best_rssi": -50, "detecting_nodes": ["A"], "detection_count": 20,
+        })
+        assert t.level == "low"
+
+    def test_900_link_escalates_with_multiple_nodes(self):
+        """The same 900 link seen by several nodes is corroborated and escalates."""
+        lone = score_rf_contact({
+            "signal_type": "elrs_900", "band": "900", "correlated": False,
+            "best_rssi": -60, "detecting_nodes": ["A"], "detection_count": 5,
+        })
+        many = score_rf_contact({
+            "signal_type": "elrs_900", "band": "900", "correlated": False,
+            "best_rssi": -60, "detecting_nodes": ["A", "B", "C"], "detection_count": 5,
+        })
+        assert lone.level == "low"
+        assert many.level in ("medium", "high") and many.score > lone.score
+
+    def test_no_rid_weight_lower_on_900_than_2g4(self):
+        """A dark link's no-RID contribution is far smaller on 900 than on 2.4."""
+        common = dict(correlated=False, best_rssi=-60,
+                      detecting_nodes=["A"], detection_count=5)
+        g24 = score_rf_contact({"signal_type": "elrs_2g", "band": "2g4", **common})
+        g900 = score_rf_contact({"signal_type": "elrs_900", "band": "900", **common})
+        assert g24.no_rid_correlation > 5 * g900.no_rid_correlation
+
+    def test_5g8_video_still_alerts_without_corroboration(self):
+        """5.8 GHz video implies a flying FPV aircraft, so a lone dark link
+        there is still suspicious and is not gated like 900."""
+        t = score_rf_contact({
+            "signal_type": "fpv_video_5g", "band": "5g8", "correlated": False,
+            "best_rssi": -55, "detecting_nodes": ["A"], "detection_count": 8,
+        })
+        assert t.level in ("medium", "high")
+
     def test_every_signal_type_has_severity(self):
         for name in ("dji_ocusync", "elrs_2g", "elrs_900", "crossfire_900",
                      "fpv_video_5g", "fpv_video_analog", "lora_900", "unknown"):

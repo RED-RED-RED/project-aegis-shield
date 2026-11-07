@@ -50,12 +50,26 @@ SIGNAL_SEVERITY = {
     "unknown":           0.3,
 }
 
-# Bands where the band itself can't be decoded to Remote ID, so "no RID
-# correlation" is expected and should NOT by itself scream non-compliant.
-# 2.4 GHz and 5.8 GHz video are the bands a real drone would use that the
-# Wi-Fi/BT scanners could in principle also see, so a dark link there is
-# more suspicious.
-_RID_CAPABLE_BANDS = {"2g4"}
+# How suspicious a "no Remote ID" link is, per band. Remote ID is broadcast
+# only on 2.4/5.8 GHz (Wi-Fi/BT), so on those bands a classified drone link with
+# no matching RID is genuinely suspicious. On 900/433/1.2 GHz, RID is never
+# present AND the bands are packed with meters, SCADA and ISM telemetry, so a
+# missing RID there means essentially nothing on its own.
+BAND_NO_RID_WEIGHT = {
+    "2g4": 1.0,    # RID lives here — a dark link is the core non-compliant case
+    "5g8": 0.9,    # 5.8 video => an FPV aircraft is flying; RID rarely present
+    "1g2": 0.5,    # video band, less crowded
+    "900": 0.15,   # crowded ISM: meters/SCADA/LoRa — no-RID is meaningless here
+    "433": 0.15,
+}
+_DEFAULT_NO_RID_WEIGHT = 0.3
+
+# Crowded ISM bands where a lone, single-node link is almost always ground
+# clutter (a meter on a pole is both strong and sustained). A link here can only
+# escalate to an alert when corroborated — seen by multiple nodes, or (future)
+# paired with a concurrent 2.4/5.8 link. Until then it stays visible but low.
+_NEEDS_CORROBORATION = {"900", "433"}
+_MIN_CORROBORATING_NODES = 2
 
 
 @dataclass
@@ -100,10 +114,11 @@ def score_rf_contact(contact: dict) -> RFThreat:
     # No Remote ID correlation. A classified drone link with nothing broadcasting
     # Remote ID is the core "non-compliant drone" signal. Weight it by how
     # drone-like the signal is, so lora_900/unknown don't over-alert.
+    band = contact.get("band")
     correlated = bool(contact.get("correlated"))
     if not correlated:
-        base = 1.0 if contact.get("band") in _RID_CAPABLE_BANDS else 0.85
-        t.no_rid_correlation = base * t.signal_type_severity
+        weight = BAND_NO_RID_WEIGHT.get(band, _DEFAULT_NO_RID_WEIGHT)
+        t.no_rid_correlation = weight * t.signal_type_severity
     else:
         t.no_rid_correlation = 0.0
 
@@ -125,4 +140,14 @@ def score_rf_contact(contact: dict) -> RFThreat:
 
     t.score = sum(WEIGHTS[k] * getattr(t, k) for k in WEIGHTS)
     t.level = _level(t.score)
+
+    # Corroboration gate: a lone, single-node link on a crowded ISM band
+    # (900/433) cannot raise an alert on its own, however strong or sustained —
+    # a stationary meter is both. It stays visible but capped below the medium
+    # threshold ("low") until a second node corroborates it. A real drone
+    # control link near the airfield is seen by multiple nodes and escalates
+    # normally.
+    if band in _NEEDS_CORROBORATION and node_count < _MIN_CORROBORATING_NODES:
+        t.score = min(t.score, MEDIUM_THRESHOLD - 1)
+        t.level = _level(t.score)
     return t

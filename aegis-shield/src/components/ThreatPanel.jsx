@@ -68,6 +68,8 @@ const css = `
 .tp-rf-band { color: var(--steel-blue-light); }
 .tp-rf-rssi { color: var(--muted); }
 .tp-rf-dark { color: var(--threat-high); font-weight: 600; }
+.tp-rf-dark-low { color: var(--muted); font-weight: 500; }
+.tp-stat-sub { font-size: 0.6em; color: var(--muted); font-weight: 500; margin-left: 4px; vertical-align: middle; }
 .tp-rf-ok   { color: var(--threat-low); }
 .tp-rf-score { text-align: right; font-weight: 700; }
 
@@ -274,7 +276,11 @@ export default function ThreatPanel() {
   const highCount = drones.filter(d => (d.threat_score??0) >= 70).length
   const medCount  = drones.filter(d => (d.threat_score??0) >= 40 && (d.threat_score??0) < 70).length
   const mlatCount = drones.filter(d => d.mlat_lat != null).length
-  const darkCount = darkLinks.length
+  // "No RID" headline counts only escalated dark links (medium/high). Lone,
+  // uncorroborated ISM links (meters, SCADA on 900) score low and stay visible
+  // in the list below, but don't inflate the threat count or turn it red.
+  const darkCount  = darkLinks.filter(c => (c.threat_score ?? 0) >= 40).length
+  const darkQuiet  = darkLinks.length - darkCount
 
   // Parse threat_factors — server returns either a dict or a stringified dict
   let factors = null
@@ -309,7 +315,9 @@ export default function ThreatPanel() {
           </div>
           <div className="tp-stat">
             <div className="tp-stat-label">RF / No RID</div>
-            <div className={`tp-stat-val ${darkCount > 0 ? 'tv-danger' : 'tv-green'}`}>{darkCount}</div>
+            <div className={`tp-stat-val ${darkCount > 0 ? 'tv-danger' : 'tv-green'}`}>
+              {darkCount}{darkQuiet > 0 && <span className="tp-stat-sub">+{darkQuiet} quiet</span>}
+            </div>
           </div>
           <div className="tp-stat">
             <div className="tp-stat-label">Total Drones</div>
@@ -325,7 +333,9 @@ export default function ThreatPanel() {
                 <span className="tp-rf-sig">{c.signal_type}</span>
                 <span className="tp-rf-band">{c.band}</span>
                 <span className="tp-rf-rssi">{c.last_rssi != null ? Math.round(c.last_rssi)+'dBm' : '—'}</span>
-                <span className={c.correlated === false ? 'tp-rf-dark' : 'tp-rf-ok'}>
+                <span className={c.correlated === false
+                                   ? ((c.threat_score ?? 0) >= 40 ? 'tp-rf-dark' : 'tp-rf-dark-low')
+                                   : 'tp-rf-ok'}>
                   {c.correlated === false ? 'NO RID' : 'RID ok'}
                 </span>
                 <span className="tp-rf-score" style={{ color: threatColor(c.threat_score) }}>
