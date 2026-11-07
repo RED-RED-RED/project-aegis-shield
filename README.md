@@ -303,10 +303,31 @@ Verifies TCP connectivity to all services, checks the REST API, reports node onl
 
 ### Updating
 
+After pushing new code, update each machine from its own checkout.
+
+**Server** (run from the repo root on the server host):
+
 ```bash
-sudo bash scripts/update.sh server   # Pull latest, rebuild UI, restart containers
-sudo bash scripts/update.sh node     # Pull latest, update deps, restart service
-bash scripts/update.sh version       # Show current commit + API version
+sudo bash scripts/update.sh server   # Pull latest, rebuild UI, rebuild + restart the API container
+# or: make update
+```
+
+This runs a fast-forward `git pull`, rebuilds the dashboard (`aegis-shield/dist`, which nginx serves live from a read-only volume, so no nginx restart is needed), then rebuilds and restarts the `aegis-server` container. New database tables are created automatically on startup (`CREATE TABLE IF NOT EXISTS`), so there is no separate migration step. Add `--skip-ui` to leave the dashboard untouched, or `--no-pull` to rebuild the current checkout without fetching.
+
+**Node** (run on each Raspberry Pi, repo at `/opt/argus-node`):
+
+```bash
+sudo bash scripts/update.sh node     # Pull latest, update venv deps, re-patch pyrtlsdr, restart the service
+# or: make update-node
+```
+
+This does `git fetch` + `git reset --hard origin/main`, reinstalls `argus-node/requirements.txt` into the venv, re-applies the Python 3.13 pyrtlsdr patch, and restarts `argus-node.service`.
+
+**Version check** (any host):
+
+```bash
+bash scripts/update.sh version       # Show current commit, branch, date, and API version
+# or: make version
 ```
 
 ---

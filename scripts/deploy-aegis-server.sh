@@ -316,7 +316,7 @@ docker compose -f aegis-server/docker/docker-compose.yml restart aegis-server
 docker compose -f aegis-server/docker/docker-compose.yml down
 
 # Update to latest
-bash scripts/update.sh
+bash scripts/update.sh server
 \`\`\`
 SUMMARY
 chmod 600 "$SUMMARY_FILE"
