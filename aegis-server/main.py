@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detections, nodes, alerts, websocket, analysis, integrations, rf, system, flights
+from api.routes import detections, nodes, alerts, websocket, analysis, rf, system, flights
 from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
@@ -102,7 +102,6 @@ app.include_router(detections.router, prefix="/api/detections", tags=["detection
 app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"],       dependencies=_auth)
 app.include_router(alerts.router,     prefix="/api/alerts",     tags=["alerts"],      dependencies=_auth)
 app.include_router(analysis.router,      prefix="/api/analysis",      tags=["analysis"],      dependencies=_auth)
-app.include_router(integrations.router,  prefix="/api/integrations",  tags=["integrations"],  dependencies=_auth)
 app.include_router(rf.router,             prefix="/api/rf",            tags=["rf"],            dependencies=_auth)
 app.include_router(system.router,         prefix="/api/system",        tags=["system"],        dependencies=_auth)
 app.include_router(flights.router,        prefix="/api/flights",       tags=["flights"],       dependencies=_auth)

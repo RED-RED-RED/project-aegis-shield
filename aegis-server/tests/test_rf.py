@@ -246,8 +246,7 @@ class TestRFHandler:
 class TestRFAlert:
     @pytest.fixture
     def engine(self):
-        with patch("mqtt.alert_engine.WSBroadcaster"), \
-             patch("mqtt.alert_engine.AlgoNotifier"):
+        with patch("mqtt.alert_engine.WSBroadcaster"):
             from mqtt.alert_engine import AlertEngine
             e = AlertEngine(Settings())
             e._emit = AsyncMock()

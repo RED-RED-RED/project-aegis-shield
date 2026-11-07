@@ -21,16 +21,12 @@ import logging
 import time
 from collections import defaultdict
 
-from core.config import Settings, get_settings
+from core.config import Settings
 from db.database import get_pool
-from integrations.algo_notifier import AlgoNotifier
 from models.schemas import DetectionEvent, NodeHeartbeat
 from mqtt.ws_broadcaster import WSBroadcaster
 
 log = logging.getLogger("alerts")
-
-# Module-level singleton — disabled (zero overhead) when ALGO_8128_ENABLED=false
-_algo = AlgoNotifier(get_settings())
 
 # 400 ft in meters
 FAA_MAX_ALT_M = 121.92
@@ -135,9 +131,7 @@ class AlertEngine:
         pool = await get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                """SELECT detection_count,
-                          EXTRACT(EPOCH FROM (NOW() - last_seen)) AS quiet_seconds
-                   FROM drone_tracks WHERE drone_id = $1""",
+                "SELECT detection_count FROM drone_tracks WHERE drone_id = $1",
                 drone.id
             )
             if row and row["detection_count"] == 1:
@@ -154,16 +148,6 @@ class AlertEngine:
                     "lat": drone.lat,
                     "lon": drone.lon,
                 })
-            # Extract quiet_s before releasing the connection — the Algo HTTP call
-            # must not happen while holding a pool connection (up to 3 s timeout).
-            quiet_s = float(row["quiet_seconds"]) if row and row["quiet_seconds"] else 0.0
-
-        # If drone was quiet > 60 s, reset strobe state so the trigger logic below
-        # starts fresh rather than applying the previous cooldown.
-        if quiet_s > 60 and _algo.get_drone_level(drone.id):
-            await _algo.clear()
-            _algo.clear_drone_state(drone.id)
-
         # Write and broadcast all generated alerts (dedup checked here)
         for alert in alerts:
             key = (alert["category"], alert.get("drone_id"), alert.get("node_id"))
@@ -172,22 +156,6 @@ class AlertEngine:
                 continue
             self._dedup[key] = now_ts
             await self._emit(alert)
-
-        # ---- Algo 8128 strobe logic ----
-        # Use `alerts` (all rule violations for this detection), NOT the dedup-filtered
-        # subset. The dedup window is for DB/WS spam prevention; the AlgoNotifier has
-        # its own cooldown. Using emitted here would incorrectly clear the strobe while
-        # a drone is still actively violating but its alert is suppressed by dedup.
-        _rank = {"low": 0, "medium": 1, "high": 2}
-        drone_id = event.drone.id
-        drone_alerts = [a for a in alerts if a.get("drone_id") == drone_id]
-        if drone_alerts:
-            top_level = max(drone_alerts, key=lambda a: _rank.get(a["level"], -1))["level"]
-            await _algo.trigger(top_level, drone_id)
-        elif _algo.get_drone_level(drone_id):
-            # No rule violations for this drone this cycle — threat has cleared.
-            await _algo.clear()
-            _algo.clear_drone_state(drone_id)
 
     async def evaluate_heartbeat(self, hb: NodeHeartbeat):
         """
@@ -292,5 +260,3 @@ class AlertEngine:
 
         # Push to WebSocket clients
         await self.broadcaster.broadcast_alert(dict(row))
-        # NOTE: Algo 8128 strobe trigger is handled in evaluate() after the full
-        # alert batch is processed, so we can determine the highest threat level.
