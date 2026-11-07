@@ -79,9 +79,9 @@ Open `http://<server-ip>` — AEGIS Shield will appear.
 
 | Component | Description | Runs on |
 |---|---|---|
-| **ARGUS Node** | Sensor node — scans Wi-Fi NAN, BT4/5, RTL-SDR; publishes to MQTT | Raspberry Pi 4 Model B (2 GB) |
-| **AEGIS Server** | Central platform — ingests MQTT, stores detections, runs analysis | Pi 4 / any Linux |
-| **AEGIS Shield** | Tactical dashboard — live map, threats, alerts, packet feed | Browser (Nginx) |
+| **ARGUS Node** | Sensor node — scans Wi-Fi NAN, BT4/5, SDR; publishes to MQTT | Raspberry Pi 5 (8 GB) |
+| **AEGIS Server** | Central platform — ingests MQTT, stores detections, runs analysis | Pi 5 / x86 mini PC / any 64-bit Linux + Docker |
+| **AEGIS Shield** | Tactical dashboard — live map, threats, packet feed, flight history, system health | Browser (Nginx) |
 | **Calibration** | RSSI path-loss model fitting for MLAT accuracy | Runs anywhere |
 
 ### Data flow
@@ -106,7 +106,7 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 | `argus/<id>/detection` | node → server | Full RID frame, RSSI, node GPS |
 | `argus/<id>/heartbeat` | node → server | CPU, memory, GPS fix, active radios list, jamming/spoofing state, survey status (10s) |
 | `argus/<id>/status` | node → server | `online`/`offline` (LWT, retained) |
-| `argus/<id>/rf_event` | node → server | RTL-SDR RF burst (optional) |
+| `argus/<id>/rf_detection` | node → server | SDR-classified RF control/video link — OcuSync, ELRS, FPV video, etc. (optional) |
 
 **Heartbeat extra fields (NEO-M9N only):**
 
@@ -122,20 +122,32 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 
 ## Hardware
 
-### Per ARGUS Node (~$150)
+### Per ARGUS Node (~$550–650 as configured)
 
-| Part | Model | Role |
-|---|---|---|
-| Single-board computer | Raspberry Pi 4 Model B (2 GB) | Host |
-| Wi-Fi adapter | Alfa AWUS036ACM | Wi-Fi NAN monitor mode (mt76x2u driver) |
-| Bluetooth dongle | Nordic nRF52840 USB (PCA10059) | BT4 + BT5 Long Range |
-| GPS module | u-blox NEO-M9N (USB, recommended) or NEO-M8N (UART, legacy) | Node geolocation |
-| RTL-SDR (optional) | RTL-SDR v3 | RF fingerprinting |
-| Powered USB hub | Any 4-port | Powers all USB peripherals |
+Reference build for the current field node. Prices are rough street figures and will drift — treat them as ballpark, not a quote.
 
-### AEGIS Server (~$60–100)
+| Part | Example | Role | ~Cost |
+|---|---|---|---|
+| Single-board computer | Raspberry Pi 5 Model B (8 GB) | Host | $80 |
+| Active cooler | Pi 5 active cooler / heatsink | Thermal | $10 |
+| Boot storage | microSD (A2) or NVMe + HAT | OS + local cache | $15–40 |
+| UPS | Pi 5 UPS HAT (18650) | Ride-through power + clean shutdown | $35–50 |
+| Wi-Fi adapter | Alfa AWUS036ACM | Wi-Fi NAN monitor mode (mt76x2u) | $60 |
+| Bluetooth dongle | Nordic nRF52840 Dongle (PCA10059) | BT4 + BT5 Long Range (Coded PHY) | $11 |
+| GPS module | u-blox NEO-M9N (USB) | Geolocation + jamming/spoofing detection | $77 |
+| Active GPS antenna | SMA active patch/puck antenna | GPS reception (see note — quality varies a lot) | $10–15 |
+| SDR | RTL-SDR Blog V4 (HackRF for 2.4/5.8 GHz) | RF link detection | $40 (HackRF $300+) |
+| Wi-Fi / SDR antennas + pigtails | SMA/RP-SMA whips + bulkhead pigtails | External RF, panel-mounted | $20–30 |
+| Enclosure | Weatherproof outdoor hotspot kit (RAK/MNTD style) | IP-rated housing | $60 |
+| External antenna + mount | 4 dBi N-male fiberglass + bracket | Outdoor comms | $20 |
+| Panel hardware | Vent/breather, bulkhead GPS connector, status LED, power button | Enclosure I/O | $35–45 |
+| Cables & connectors | USB, SMA, pigtails, adapters | Interconnect | $40–70 |
 
-Any Linux machine with 2GB+ RAM and Docker. Raspberry Pi 4 works well; an old NUC or VPS works equally well.
+Roughly **$550–650** per node with the RTL-SDR. Swapping in a HackRF (for 2.4/5.8 GHz coverage) adds ~$300+. Several items (GPS module, storage) you may already have on hand.
+
+### AEGIS Server (~$150–250)
+
+Any 64-bit Linux machine with Docker. The stack (TimescaleDB + Mosquitto + FastAPI + Nginx) is light on CPU but benefits from an **NVMe SSD** — TimescaleDB is write-heavy, so don't run the database on an SD card — and **16 GB RAM** for the history views. A fanless Intel N100/N305 mini PC (16 GB / NVMe, ~$150–250, 12–19 V input for vehicle/field use) is the sweet spot; a Raspberry Pi 5 (8 GB) with an NVMe HAT also works for small deployments. An old NUC or a cloud VPS works equally well.
 
 ### Critical hardware notes
 
@@ -147,7 +159,7 @@ Any Linux machine with 2GB+ RAM and Docker. Raspberry Pi 4 works well; an old NU
 
 **u-blox NEO-M8N (UART, legacy)** — connect to Pi UART (`/dev/ttyAMA0`). Pass `--gps-mode uart` to the deploy script; it enables the UART in `/boot/firmware/config.txt` and disables the serial console. **A reboot is required** after this setup. The NEO-M8N does not support UBX survey-in or hardware jamming/spoofing detection.
 
-**RTL-SDR R820T frequency limitation** — the R820T tuner (used in RTL-SDR v3 and most cheap dongles) has a hardware ceiling of ~1,766 MHz. It cannot scan 2.4 GHz. The ARGUS SDR scanner targets 433/868/915 MHz and 1.2 GHz instead. If you need 2.4 GHz coverage, a HackRF or ADALM-Pluto is required (not currently supported).
+**SDR frequency coverage** — the RTL-SDR Blog V4 reaches ~1.766 GHz, so on an RTL-SDR the scanner covers **433 / 900 MHz and 1.2 GHz** only; 2.4 and 5.8 GHz are above the tuner and are skipped automatically. A **HackRF** (1 MHz – 6 GHz) is supported for full coverage, including 2.4 GHz OcuSync/ELRS and 5.8 GHz FPV video — set `sdr_backend: hackrf` in the node config and install SoapySDR. The classifier is **receive-only**; the HackRF's transmit path is never used (jamming is illegal for non-federal operators). Classifier thresholds are first-order and meant to be field-calibrated against a known transmitter (e.g. a RadioMaster ELRS radio).
 
 ---
 
@@ -365,10 +377,11 @@ AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a f
 
 | View | Description |
 |---|---|
-| **Live Map** | Leaflet map with threat-coloured drone markers, MLAT circles, confidence radii, mismatch lines, node pulse rings, and track trails |
-| **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, and spoof confidence meter. Shows all drones seen in the last 24 hours — stale entries (>5 min) are dimmed and tagged STALE. |
-| **Packet Feed** | Detection stream pre-seeded with the last 150 detections from the database on page load, then updated live via WebSocket |
-| **Architecture** | System architecture reference diagram |
+| **Live Map** | Leaflet map with threat-coloured drone markers, RF-contact diamonds, MLAT circles, confidence radii, mismatch lines, node pulse rings, and track trails. Contacts seen in the last ~2 min show solid; older ones dim and drop off the live map after 15 min; a dismiss control hides one immediately. |
+| **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, spoof confidence meter, and an "RF / No RID" strip. Live drones show solid; stale ones (>2 min) are dimmed. |
+| **Packet Feed** | Detection stream pre-seeded with the last 150 detections on load, then live via WebSocket. Includes SDR-classified RF links with RID / no-RID tags. |
+| **Flights** | Historical sorties — detections grouped into flights (new flight after a >5 min gap). Filterable flight list; the selected flight shows its path, operator location, detecting nodes, altitude/speed profile, a time-scrub replay, and GPX/KML/CSV export. No-RID / RF-only contacts are listed separately. |
+| **System** | Live status cards for every node and the server (CPU/mem/disk, temp, uptime, GPS sats, DB/MQTT) plus historical charts (1h–7d range, ~7-day retention) with warning bands. |
 
 ### Sidebar
 
@@ -388,6 +401,8 @@ Alerts can be dismissed individually (× button, visible on hover) or all at onc
 - **Mismatch line** — dashed line from broadcast position to MLAT estimate (drawn when > 100m divergence, red above 500m)
 - **Node hexagon** — steel-blue hex with expanding CSS pulse rings when online
 - **Track trail** — 60-point rolling history polyline, inherits threat colour
+- **RF contact** — amber diamond at the detecting node with a dashed ring (RSSI range estimate, **not** a position fix). Red + ⚠ only when escalated to medium/high; muted when it's uncorroborated ISM (e.g. a lone 900 MHz meter); green when it correlates to a Remote ID broadcast
+- **Stale fade** — any contact not seen within ~2 min dims; it is removed from the live map after 15 min (still available in the Flights view)
 
 ### Building from source
 
@@ -440,6 +455,28 @@ GET  /api/analysis/mlat                 Drones with MLAT results (filter: min_mi
 GET  /api/analysis/stats                High/medium counts, spoofed count, average score
 ```
 
+### RF (SDR)
+
+```
+GET  /api/rf/contacts                   SDR-classified RF links (filter: active_only, dark_only, limit)
+GET  /api/rf/stats                      RF contact counts
+```
+
+### System health
+
+```
+GET  /api/system/health/history         Per-node + server cpu/mem/disk/temp series (range: 1h|6h|24h|7d)
+```
+
+### Flights
+
+```
+GET  /api/flights                       Flight list (filter: range, compliant, node, min_threat)
+GET  /api/flights/{id}                  Flight detail — path, operator, detecting nodes, profile
+GET  /api/flights/{id}/export?format=   gpx | kml | csv download
+GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
+```
+
 ### Alert categories
 
 | Category | Level | Trigger |
@@ -452,6 +489,7 @@ GET  /api/analysis/stats                High/medium counts, spoofed count, avera
 | `threat_score` | HIGH | Threat score crosses into ≥ 70 band |
 | `position_mismatch` | HIGH | MLAT estimate diverges > 250m from broadcast with spoof confidence > 60% |
 | `gps_jamming` | MEDIUM | ARGUS node reports GPS jamming (`warning` or `critical`) from UBX-NAV-STATUS |
+| `rf_no_rid` | HIGH / MEDIUM | SDR-classified drone link (2.4 / 5.8 GHz) with no correlating Remote ID broadcast. 900/433 MHz links need corroboration (a second node) before they alert |
 
 ### WebSocket
 
@@ -459,8 +497,9 @@ GET  /api/analysis/stats                High/medium counts, spoofed count, avera
 
 | Message type | Trigger | Content |
 |---|---|---|
-| `live_state` | Every 500ms | Full snapshot: drones, nodes, alerts, detection rate |
+| `live_state` | Every 500ms | Full snapshot: drones, nodes, alerts, RF contacts, detection rate |
 | `detection` | Per detection | Single detection for packet feed |
+| `rf_detection` | Per RF link | SDR-classified RF contact for the packet feed / map |
 | `alert` | Per alert | New alert object |
 | `node_update` | Per heartbeat | Node status + health metrics |
 
@@ -536,12 +575,13 @@ The R820T tuner cannot tune above ~1,766 MHz. If you have modified `SWEEP_FREQS`
 ## Development
 
 ```bash
-# Run all 147 tests
+# Run all 311 tests
 make test
 
 # Individual suites
-make test-node     # 67 tests — ARGUS Node RID parser + GPS + Wi-Fi NAN (scapy required for Wi-Fi NAN)
-make test-server   # 49 tests — alert engine + trilateration + scoring
+make test-node     # 200 tests — RID parser, GPS, Wi-Fi NAN, Bluetooth HCI, SDR classifier (scapy required for Wi-Fi NAN)
+make test-server   # 80 tests  — alert engine, trilateration, threat scoring, RF pipeline, system + flights
+make test-cal      # 31 tests  — calibration engine, collector, config writer
 
 # Start server
 make server-up && make server-logs
@@ -558,13 +598,17 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and workflow.
 
 | Module | Tests |
 |---|---|
-| ARGUS Node — OpenDroneID parser | 11 |
-| ARGUS Node — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 42 |
-| ARGUS Node — Wi-Fi NAN dual-adapter scanner (requires scapy) | 14 |
+| ARGUS Node — OpenDroneID parser + RID wire formats | 30 |
+| ARGUS Node — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 66 |
+| ARGUS Node — Wi-Fi NAN dual-adapter scanner (requires scapy) | 31 |
+| ARGUS Node — Bluetooth HCI (BT4/5 Long Range) | 43 |
+| ARGUS Node — SDR classifier + scanner | 30 |
 | AEGIS Server — alert engine (rules + GPS jamming alerts) | 19 |
 | AEGIS Server — trilateration + threat scoring | 30 |
+| AEGIS Server — RF pipeline (classify → correlate → score → alert) | 22 |
+| AEGIS Server — system health + flight history | 9 |
 | Calibration — engine, collector, config writer | 31 |
-| **Total** | **147** |
+| **Total** | **311** |
 
 ---
 
