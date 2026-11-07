@@ -142,8 +142,14 @@ class BluetoothScanner:
                 scanner.start()
                 first = False
                 log.info(f"hci{self.hci_index}: {scanner.mode}, duplicate filtering off")
+                log.info(f"hci{self.hci_index}: {scanner.feature_summary}")
+                if scanner.ext_error:
+                    log.warning(f"hci{self.hci_index}: extended scan commands rejected ({scanner.ext_error})")
                 if self.enable_coded_phy and not scanner.coded:
-                    log.warning("Controller does not support Coded PHY: BT5 Long Range disabled")
+                    log.warning(
+                        "BT5 Long Range (Coded PHY) is off: the dongle firmware does not "
+                        "support extended scanning. BT4 Remote ID still works."
+                    )
                 while not self.stop_event.is_set():
                     for r in scanner.read_reports(timeout=0.5):
                         self._adverts += 1

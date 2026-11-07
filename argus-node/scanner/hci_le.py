@@ -332,6 +332,8 @@ class LEScanner:
         self.want_coded = coded_phy
         self.extended = False
         self.coded = False
+        self.features = 0
+        self.ext_error = ""
         self._pending: list[bytes] = []
         self._reasm = ExtReassembler()
 
@@ -359,17 +361,11 @@ class LEScanner:
                 self._pending.append(pkt)       # adverts arriving during a command
         raise HCIError(f"no response to command 0x{opcode:04X}")
 
-    def start(self):
+    def _base_init(self):
         self._command(OP_RESET, timeout=5.0)
         self._pending.clear()
         self._command(OP_SET_EVENT_MASK, struct.pack("<Q", EVENT_MASK))
         self._command(OP_LE_SET_EVENT_MASK, struct.pack("<Q", LE_EVENT_MASK))
-
-        ret = self._command(OP_LE_READ_FEATURES)
-        features = struct.unpack_from("<Q", ret, 1)[0] if len(ret) >= 9 else 0
-        self.extended = bool(features & LE_FEATURE_EXT_ADV)
-        self.coded = self.extended and self.want_coded and bool(features & LE_FEATURE_CODED_PHY)
-
         # Passive scanning never transmits, but controllers still validate the
         # own-address type.  The nRF52840 has no public address, so use a
         # random static one (two top bits set).
@@ -377,23 +373,64 @@ class LEScanner:
         addr[5] |= 0xC0
         self._command(OP_LE_SET_RANDOM_ADDR, bytes(addr))
 
-        if self.extended:
-            phys = PHY_1M_BIT | (PHY_CODED_BIT if self.coded else 0)
-            if self.coded:
-                per_phy = struct.pack("<BHH", 0x00, SCAN_INTERVAL_DUAL, SCAN_WINDOW_DUAL)
-                params = bytes([0x01, 0x00, phys]) + per_phy + per_phy
-            else:
-                per_phy = struct.pack("<BHH", 0x00, SCAN_INTERVAL_SINGLE, SCAN_WINDOW_SINGLE)
-                params = bytes([0x01, 0x00, phys]) + per_phy
-            self._command(OP_LE_SET_EXT_SCAN_PARAMS, params)
-            # Enable, Filter_Duplicates=0, Duration=0, Period=0
-            self._command(OP_LE_SET_EXT_SCAN_ENABLE, struct.pack("<BBHH", 1, 0, 0, 0))
+    def start(self):
+        self._base_init()
+        ret = self._command(OP_LE_READ_FEATURES)
+        self.features = struct.unpack_from("<Q", ret, 1)[0] if len(ret) >= 9 else 0
+        has_ext   = bool(self.features & LE_FEATURE_EXT_ADV)
+        has_coded = bool(self.features & LE_FEATURE_CODED_PHY)
+
+        # Coded PHY can only be scanned with the extended commands.  Some
+        # controller builds advertise Coded PHY without the Extended Advertising
+        # bit, so try the extended commands whenever either bit is set and
+        # fall back to legacy scanning if the controller rejects them.
+        if has_ext or (has_coded and self.want_coded):
+            coded = self.want_coded and has_coded
+            try:
+                self._start_extended(coded)
+                self.extended, self.coded = True, coded
+                return
+            except HCIError as e:
+                self.ext_error = str(e)
+                if coded:
+                    try:                                  # maybe only Coded is the problem
+                        self._base_init()
+                        self._start_extended(False)
+                        self.extended, self.coded = True, False
+                        return
+                    except HCIError as e2:
+                        self.ext_error = str(e2)
+                # The spec forbids mixing legacy and extended commands without a reset
+                self._base_init()
+
+        self._start_legacy()
+        self.extended = self.coded = False
+
+    def _start_extended(self, coded: bool):
+        phys = PHY_1M_BIT | (PHY_CODED_BIT if coded else 0)
+        if coded:
+            per_phy = struct.pack("<BHH", 0x00, SCAN_INTERVAL_DUAL, SCAN_WINDOW_DUAL)
+            params = bytes([0x01, 0x00, phys]) + per_phy + per_phy
         else:
-            # Passive, interval, window, own address random, accept all
-            self._command(OP_LE_SET_SCAN_PARAMS, struct.pack(
-                "<BHHBB", 0x00, SCAN_INTERVAL_SINGLE, SCAN_WINDOW_SINGLE, 0x01, 0x00))
-            # Enable, Filter_Duplicates=0
-            self._command(OP_LE_SET_SCAN_ENABLE, bytes([0x01, 0x00]))
+            per_phy = struct.pack("<BHH", 0x00, SCAN_INTERVAL_SINGLE, SCAN_WINDOW_SINGLE)
+            params = bytes([0x01, 0x00, phys]) + per_phy
+        self._command(OP_LE_SET_EXT_SCAN_PARAMS, params)
+        # Enable, Filter_Duplicates=0, Duration=0, Period=0
+        self._command(OP_LE_SET_EXT_SCAN_ENABLE, struct.pack("<BBHH", 1, 0, 0, 0))
+
+    def _start_legacy(self):
+        # Passive, interval, window, own address random, accept all
+        self._command(OP_LE_SET_SCAN_PARAMS, struct.pack(
+            "<BHHBB", 0x00, SCAN_INTERVAL_SINGLE, SCAN_WINDOW_SINGLE, 0x01, 0x00))
+        # Enable, Filter_Duplicates=0
+        self._command(OP_LE_SET_SCAN_ENABLE, bytes([0x01, 0x00]))
+
+    @property
+    def feature_summary(self) -> str:
+        f = self.features
+        return (f"LE features 0x{f:016X} (extended advertising: "
+                f"{'yes' if f & LE_FEATURE_EXT_ADV else 'no'}, coded PHY: "
+                f"{'yes' if f & LE_FEATURE_CODED_PHY else 'no'})")
 
     def stop(self):
         try:

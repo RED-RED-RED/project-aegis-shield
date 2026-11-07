@@ -29,7 +29,8 @@ from scanner.bluetooth import BluetoothScanner
 from scanner.hci_le import (
     ExtReassembler, HCIError, HCIUnavailable, LEScanner, AdvReport,
     OP_LE_READ_FEATURES, OP_LE_SET_EXT_SCAN_ENABLE, OP_LE_SET_EXT_SCAN_PARAMS,
-    OP_LE_SET_RANDOM_ADDR, OP_LE_SET_SCAN_ENABLE, OP_LE_SET_SCAN_PARAMS, OP_RESET,
+    OP_LE_SET_EVENT_MASK, OP_LE_SET_RANDOM_ADDR, OP_LE_SET_SCAN_ENABLE,
+    OP_LE_SET_SCAN_PARAMS, OP_RESET,
     LE_FEATURE_CODED_PHY, LE_FEATURE_EXT_ADV,
     format_address, iter_ad_structures, parse_extended_reports,
     parse_legacy_reports, rid_service_data,
@@ -276,8 +277,46 @@ class TestLEScannerSetup:
         assert fc.params(OP_LE_SET_SCAN_ENABLE) == bytes([1, 0])
         assert OP_LE_SET_EXT_SCAN_PARAMS not in fc.opcodes()
 
+    def test_coded_without_ext_bit_tries_extended(self):
+        """Controllers that report Coded PHY but not Extended Advertising."""
+        fc = FakeController(features=LE_FEATURE_CODED_PHY)
+        sc = LEScanner(fc)
+        sc.start()
+        assert sc.extended and sc.coded
+        assert fc.params(OP_LE_SET_EXT_SCAN_PARAMS)[2] == 0x05
+
+    def test_rejected_extended_falls_back_to_legacy_after_reset(self):
+        fc = FakeController(features=LE_FEATURE_CODED_PHY,
+                            fail={OP_LE_SET_EXT_SCAN_PARAMS})
+        sc = LEScanner(fc)
+        sc.start()
+        assert not sc.extended and not sc.coded and sc.ext_error
+        ops = fc.opcodes()
+        last_ext = max(i for i, op in enumerate(ops) if op == OP_LE_SET_EXT_SCAN_PARAMS)
+        assert OP_RESET in ops[last_ext:]                    # reset before legacy commands
+        assert fc.params(OP_LE_SET_SCAN_ENABLE) == bytes([1, 0])
+
+    def test_coded_rejected_but_1m_extended_works(self):
+        class CodedFails(FakeController):
+            def write(self, pkt):
+                op = struct.unpack_from("<H", pkt, 1)[0]
+                self.fail = {OP_LE_SET_EXT_SCAN_PARAMS} if op == OP_LE_SET_EXT_SCAN_PARAMS and pkt[6] == 0x05 else set()
+                super().write(pkt)
+        fc = CodedFails()
+        sc = LEScanner(fc)
+        sc.start()
+        assert sc.extended and not sc.coded
+        assert fc.params(OP_LE_SET_EXT_SCAN_PARAMS)[2] == 0x01
+
+    def test_feature_summary(self):
+        fc = FakeController(features=LE_FEATURE_CODED_PHY)
+        sc = LEScanner(fc)
+        sc.start()
+        assert "coded PHY: yes" in sc.feature_summary
+        assert "extended advertising: no" in sc.feature_summary
+
     def test_command_failure_raises(self):
-        fc = FakeController(fail={OP_LE_SET_EXT_SCAN_PARAMS})
+        fc = FakeController(fail={OP_LE_SET_EVENT_MASK})
         with pytest.raises(HCIError):
             LEScanner(fc).start()
 
