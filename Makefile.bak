@@ -3,6 +3,7 @@
         server-up server-down server-logs server-rebuild \
         node-deploy node-start node-logs node-status \
         healthcheck calibrate lint clean help
+		update update-node version
 
 # ── Testing ────────────────────────────────────────────────────────────────
 

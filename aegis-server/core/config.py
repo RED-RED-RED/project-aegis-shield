@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # ---- System health ----
     server_health_interval_s: int = 20         # How often the server samples its own health
 
+    # ---- Flight history ----
+    flight_gap_s: int = 300                     # Detections >this apart start a new flight (sortie)
+    flight_min_points: int = 3                  # Fewer points than this is a stray ping, not a flight
+
     # ---- Retention ----
     detection_retention_days: int = 30
     alert_retention_days: int = 90

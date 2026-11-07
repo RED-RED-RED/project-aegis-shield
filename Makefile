@@ -2,7 +2,7 @@
 .PHONY: test test-node test-server test-cal ui-build ui-dev \
         server-up server-down server-logs server-rebuild \
         node-deploy node-start node-logs node-status \
-        healthcheck calibrate lint clean help
+        healthcheck calibrate lint clean help \
 		update update-node version
 
 # ── Testing ────────────────────────────────────────────────────────────────
@@ -93,8 +93,14 @@ healthcheck:
 
 # ── Update ─────────────────────────────────────────────────────────────────
 
-update:
-	bash scripts/update.sh
+update:          ## Update the server stack (pull, rebuild UI, rebuild API container)
+	bash scripts/update.sh server
+
+update-node:     ## Update this ARGUS node (pull, update deps, restart service)
+	sudo bash scripts/update.sh node
+
+version:         ## Show current commit + API version
+	@bash scripts/update.sh version
 
 # ── Linting ────────────────────────────────────────────────────────────────
 
