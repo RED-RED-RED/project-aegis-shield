@@ -159,6 +159,24 @@ class MQTTPublisher:
         topic = f"argus/{self.node_id}/heartbeat"
         self._enqueue(topic, payload, qos=0)
 
+    def publish_rf_detection(self, signal: dict, gps, contact_key=None):
+        """
+        Publish a classified RF link (SDR) to argus/<node>/rf_detection.
+
+        `signal` is the RFSignal dict: signal_type, band, center_freq_hz,
+        bandwidth_hz, rssi, snr_db, confidence, hop_rate_hz, burst_rate_hz.
+        """
+        payload = {
+            "node_id": self.node_id,
+            "node_position": {"lat": gps.lat, "lon": gps.lon, "alt": gps.alt},
+            "signal": signal,
+            "ts": time.time(),
+        }
+        if contact_key:
+            payload["contact_key"] = contact_key
+        topic = f"argus/{self.node_id}/rf_detection"
+        self._enqueue(topic, payload, qos=0)
+
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #

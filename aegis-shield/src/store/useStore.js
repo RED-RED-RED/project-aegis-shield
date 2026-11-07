@@ -47,7 +47,8 @@ export const useStore = create((set, get) => ({
   drones:        {},      // drone_id → DroneTrack (includes threat + mlat fields)
   nodes:         {},      // node_id  → Node
   alerts:        [],      // AlertOut[], max 200
-  recentPackets: [],      // raw detection events, max 150
+  recentPackets: [],      // raw detection + rf events, max 150
+  rfContacts:    {},      // contact_id → RFContact (SDR-classified links)
   detectionRate: 0,
   lastStateTs:   null,
 
@@ -102,10 +103,11 @@ export const useStore = create((set, get) => ({
 
   _handleMessage(msg) {
     switch (msg.type) {
-      case 'live_state':  return get()._applyLiveState(msg.payload)
-      case 'detection':   return get()._addPacket(msg.payload)
-      case 'alert':       return get()._addAlert(msg.payload)
-      case 'node_update': return get()._updateNode(msg.payload)
+      case 'live_state':    return get()._applyLiveState(msg.payload)
+      case 'detection':     return get()._addPacket(msg.payload)
+      case 'rf_detection':  return get()._addRfDetection(msg.payload)
+      case 'alert':         return get()._addAlert(msg.payload)
+      case 'node_update':   return get()._updateNode(msg.payload)
     }
   },
 
@@ -117,7 +119,9 @@ export const useStore = create((set, get) => ({
     }
     const nodes = {}
     for (const n of payload.nodes || []) nodes[n.node_id] = n
-    set({ drones, nodes,
+    const rfContacts = {}
+    for (const c of payload.rf_contacts || []) rfContacts[c.contact_id] = c
+    set({ drones, nodes, rfContacts,
           alerts: payload.recent_alerts || [],
           detectionRate: payload.detection_rate || 0,
           lastStateTs: payload.ts })
@@ -125,6 +129,38 @@ export const useStore = create((set, get) => ({
 
   _addPacket(pkt) {
     set(s => ({ recentPackets: [pkt, ...s.recentPackets].slice(0, 150) }))
+  },
+
+  _addRfDetection(pkt) {
+    // Update the live contact map and push a feed row tagged kind:'rf'.
+    set(s => {
+      const existing = s.rfContacts[pkt.contact_id] || {}
+      return {
+        rfContacts: {
+          ...s.rfContacts,
+          [pkt.contact_id]: {
+            ...existing,
+            contact_id:   pkt.contact_id,
+            signal_type:  pkt.signal_type,
+            band:         pkt.band,
+            center_freq_hz: pkt.center_freq_hz,
+            last_rssi:    pkt.rssi,
+            confidence:   pkt.confidence,
+            correlated:   pkt.correlated,
+            compliant:    pkt.compliant,
+            threat_score: pkt.threat_score,
+            threat_level: pkt.threat_level,
+            est_lat:      pkt.est_lat,
+            est_lon:      pkt.est_lon,
+            est_radius_m: pkt.est_radius_m,
+            last_seen:    pkt.ts,
+            detecting_nodes: Array.from(new Set([
+              ...(existing.detecting_nodes || []), pkt.node_id])),
+          }
+        },
+        recentPackets: [{ kind: 'rf', ...pkt }, ...s.recentPackets].slice(0, 150),
+      }
+    })
   },
   _addAlert(alert) {
     set(s => ({ alerts: [alert, ...s.alerts].slice(0, 200) }))
@@ -224,6 +260,16 @@ export const useStore = create((set, get) => ({
         recentPackets: [...packets, ...s.recentPackets].slice(0, 150)
       }))
     } catch {}
+    // Seed RF contacts so the RF layer isn't empty until the first live_state.
+    try {
+      const res = await fetch('/api/rf/contacts?active_only=true&limit=200')
+      if (res.ok) {
+        const rows = await res.json()
+        const rfContacts = {}
+        for (const c of rows) rfContacts[c.contact_id] = c
+        set({ rfContacts })
+      }
+    } catch {}
   },
 
   // ── Alert actions ────────────────────────────────────────────────────────
@@ -268,6 +314,30 @@ export const selectHighThreatDrones = s =>
 export const selectMlatDrones = s =>
   Object.values(s.drones)
     .filter(d => d.mlat_lat != null && d.mlat_lon != null)
+
+export const selectRfContacts = s =>
+  Object.values(s.rfContacts)
+    .sort((a, b) => (b.threat_score ?? -1) - (a.threat_score ?? -1))
+
+// "Dark" links: a classified drone link with no Remote ID broadcast correlating.
+export const selectDarkContacts = s =>
+  Object.values(s.rfContacts).filter(c => c.correlated === false)
+
+export const RF_SIGNAL_LABELS = {
+  dji_ocusync:      'DJI OcuSync',
+  elrs_2g:          'ELRS 2.4',
+  elrs_900:         'ELRS 900',
+  crossfire_900:    'Crossfire',
+  fpv_video_5g:     'FPV Video 5.8',
+  fpv_video_analog: 'FPV Analog',
+  video_1g2:        'Video 1.2',
+  lora_900:         'LoRa 900',
+  unknown:          'Unknown RF',
+}
+
+export const RF_BAND_LABELS = {
+  '2g4': '2.4G', '5g8': '5.8G', '900': '900M', '1g2': '1.2G', '433': '433M',
+}
 
 
 export const useUnits = () => useStore(s => s.imperial)

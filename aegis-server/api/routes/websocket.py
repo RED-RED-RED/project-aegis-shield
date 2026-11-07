@@ -120,10 +120,26 @@ async def _build_live_state() -> dict:
         """)
         det_rate = round((rate_row["cnt"] or 0) / 5.0, 1)
 
+        # Active RF contacts (SDR-classified links)
+        try:
+            rf_rows = await conn.fetch("""
+                SELECT contact_id, first_seen, last_seen, signal_type, band,
+                       center_freq_hz, bandwidth_hz, last_rssi, best_rssi,
+                       confidence, hop_rate_hz, detecting_nodes, detection_count,
+                       correlated, correlated_drone_id, compliant,
+                       est_lat, est_lon, est_radius_m, threat_score, threat_level
+                FROM rf_contacts
+                WHERE last_seen > NOW() - INTERVAL '2 minutes'
+                ORDER BY threat_score DESC NULLS LAST, last_seen DESC
+            """)
+        except Exception:
+            rf_rows = []   # table may not exist yet on a server mid-upgrade
+
     return {
         "drones":         [_row_to_dict(r) for r in drone_rows],
         "nodes":          [_row_to_dict(r) for r in node_rows],
         "recent_alerts":  [_row_to_dict(r) for r in alert_rows],
+        "rf_contacts":    [_row_to_dict(r) for r in rf_rows],
         "detection_rate": det_rate,
         "ts":             time.time(),
     }

@@ -152,10 +152,16 @@ def main():
             gps=gps,
             node_id=cfg.node_id,
             stop_event=_stop_event,
+            backend=cfg.sdr_backend,
+            sample_rate=(cfg.sdr_sample_rate or None),
+            dwell_s=cfg.sdr_dwell_s,
+            min_confidence=cfg.sdr_min_confidence,
+            publish_interval_s=cfg.sdr_publish_interval_s,
+            rssi_offset_dbm=cfg.sdr_rssi_offset_dbm,
         )
         t = threading.Thread(target=sdr.run, name="sdr", daemon=True)
         threads.append(t)
-        log.info(f"SDR scanner → device {cfg.sdr_device_index}")
+        log.info(f"SDR scanner → {cfg.sdr_backend} (device {cfg.sdr_device_index})")
 
     if not threads:
         log.error("No scanners enabled — check config. Exiting.")

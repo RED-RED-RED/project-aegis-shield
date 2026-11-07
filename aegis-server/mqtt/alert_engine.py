@@ -219,6 +219,44 @@ class AlertEngine:
             "lon":      hb.gps.get("lon"),
         })
 
+    async def evaluate_rf(self, event, contact_id: str, threat, correlated: bool,
+                          corr_drone_id):
+        """
+        Alert on classified RF links (SDR), deduplicated per contact.
+
+        The headline rule is "RF link, no Remote ID": the SDR classified a drone
+        control or video link but nothing nearby is broadcasting Remote ID. That
+        is the non-compliant-drone case this system exists to surface.
+        """
+        self._cleanup_dedup()
+        sig = event.signal
+
+        # Only the genuinely drone-like, confident, uncorrelated links alert high.
+        # lora_900 / unknown and low-confidence hits stay quiet to avoid crying
+        # wolf over smart meters and ISM chatter.
+        if (not correlated
+                and threat.level in ("high", "medium")
+                and sig.confidence >= getattr(self.settings, "rf_alert_min_confidence", 0.6)):
+            key = ("rf_no_rid", contact_id, None)
+            now_ts = time.time()
+            if now_ts - self._dedup[key] >= self.settings.alert_dedup_window_s:
+                self._dedup[key] = now_ts
+                await self._emit({
+                    "level": "high" if threat.level == "high" else "medium",
+                    "category": "rf_no_rid",
+                    "title": f"RF link, no Remote ID — {sig.signal_type} @ {sig.band}",
+                    "description": (
+                        f"{event.node_id} classified a {sig.signal_type} link "
+                        f"({sig.center_freq_hz/1e6:.1f} MHz, {sig.rssi:.0f} dBm, "
+                        f"conf {sig.confidence:.0%}) with no Remote ID broadcast nearby. "
+                        f"Possible non-compliant drone."
+                    ),
+                    "drone_id": None,
+                    "node_id": event.node_id,
+                    "lat": event.node_position.lat,
+                    "lon": event.node_position.lon,
+                })
+
     async def node_offline(self, node_id: str):
         """Called by the status handler when a node goes offline."""
         await self._emit({

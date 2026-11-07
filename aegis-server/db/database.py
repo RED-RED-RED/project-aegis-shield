@@ -287,4 +287,38 @@ async def _create_schema(pool: Pool):
             );
         """)
 
+        # ---- rf_contacts table (live state, one row per classified emitter) ----
+        # An RF contact is a link the SDR classified (ELRS, DJI, FPV video, ...)
+        # without decoding Remote ID. It is NOT a drone_track; it may or may not
+        # correlate with one. contact_id defaults to "<node>:<type>:<band>".
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rf_contacts (
+                contact_id          TEXT PRIMARY KEY,
+                first_seen          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                last_seen           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                signal_type         TEXT NOT NULL,
+                band                TEXT NOT NULL,
+                center_freq_hz      BIGINT,
+                bandwidth_hz        BIGINT,
+                last_rssi           REAL,
+                best_rssi           REAL,
+                confidence          REAL,
+                hop_rate_hz         REAL,
+                detecting_nodes     TEXT[] DEFAULT '{}',
+                detection_count     INT DEFAULT 0,
+                correlated          BOOLEAN DEFAULT FALSE,
+                correlated_drone_id TEXT,
+                compliant           BOOLEAN,
+                est_lat             DOUBLE PRECISION,
+                est_lon             DOUBLE PRECISION,
+                est_radius_m        REAL,
+                threat_score        REAL,
+                threat_level        TEXT
+            );
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rf_contacts_last_seen
+                ON rf_contacts (last_seen DESC);
+        """)
+
         log.info("Database schema ready.")

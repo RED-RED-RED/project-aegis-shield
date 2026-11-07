@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detections, nodes, alerts, websocket, analysis, integrations
+from api.routes import detections, nodes, alerts, websocket, analysis, integrations, rf
 from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
@@ -97,6 +97,7 @@ app.include_router(nodes.router,      prefix="/api/nodes",      tags=["nodes"], 
 app.include_router(alerts.router,     prefix="/api/alerts",     tags=["alerts"],      dependencies=_auth)
 app.include_router(analysis.router,      prefix="/api/analysis",      tags=["analysis"],      dependencies=_auth)
 app.include_router(integrations.router,  prefix="/api/integrations",  tags=["integrations"],  dependencies=_auth)
+app.include_router(rf.router,             prefix="/api/rf",            tags=["rf"],            dependencies=_auth)
 
 # WebSocket — protected by same API key
 app.include_router(websocket.router, tags=["websocket"], dependencies=_auth)

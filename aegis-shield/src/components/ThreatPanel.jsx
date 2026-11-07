@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { formatDistanceToNow } from 'date-fns'
-import { useStore, selectActiveDrones, FACTOR_LABELS, threatColor, threatBg, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
+import { useStore, selectActiveDrones, selectRfContacts, selectDarkContacts, FACTOR_LABELS, threatColor, threatBg, threatLabel, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
 
 const css = `
 .tp-wrap {
@@ -37,6 +37,40 @@ const css = `
 .tv-green  { color: var(--olive); }
 
 /* ── Body: two-column layout ───────────────────────────── */
+.tp-rf {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: rgba(200,146,74,0.04);
+  padding: 4px 0;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.tp-rf-head {
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--amber);
+  padding: 2px 14px 4px;
+}
+.tp-rf-row {
+  display: grid;
+  grid-template-columns: 1fr 44px 56px 52px 28px;
+  gap: 0 8px;
+  padding: 2px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.6;
+  align-items: center;
+}
+.tp-rf-row:hover { background: var(--bg2); }
+.tp-rf-sig  { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-rf-band { color: var(--steel-blue-light); }
+.tp-rf-rssi { color: var(--muted); }
+.tp-rf-dark { color: var(--threat-high); font-weight: 600; }
+.tp-rf-ok   { color: var(--threat-low); }
+.tp-rf-score { text-align: right; font-weight: 700; }
+
 .tp-body {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -229,6 +263,8 @@ function FactorBar({ name, value, weight }) {
 // ── Main component ─────────────────────────────────────────────────────────
 export default function ThreatPanel() {
   const drones     = useStore(selectActiveDrones)
+  const rfContacts = useStore(selectRfContacts)
+  const darkLinks  = useStore(selectDarkContacts)
   const [selId, setSel] = useState(null)
   const selectDrone = useStore(s => s.selectDrone)
   const imperial   = useUnits()
@@ -238,6 +274,7 @@ export default function ThreatPanel() {
   const highCount = drones.filter(d => (d.threat_score??0) >= 70).length
   const medCount  = drones.filter(d => (d.threat_score??0) >= 40 && (d.threat_score??0) < 70).length
   const mlatCount = drones.filter(d => d.mlat_lat != null).length
+  const darkCount = darkLinks.length
 
   // Parse threat_factors — server returns either a dict or a stringified dict
   let factors = null
@@ -271,10 +308,33 @@ export default function ThreatPanel() {
             <div className="tp-stat-val tv-amber">{mlatCount}</div>
           </div>
           <div className="tp-stat">
+            <div className="tp-stat-label">RF / No RID</div>
+            <div className={`tp-stat-val ${darkCount > 0 ? 'tv-danger' : 'tv-green'}`}>{darkCount}</div>
+          </div>
+          <div className="tp-stat">
             <div className="tp-stat-label">Total Drones</div>
             <div className="tp-stat-val">{drones.length}</div>
           </div>
         </div>
+
+        {rfContacts.length > 0 && (
+          <div className="tp-rf">
+            <div className="tp-rf-head">RF Contacts (SDR)</div>
+            {rfContacts.slice(0, 8).map(c => (
+              <div key={c.contact_id} className="tp-rf-row">
+                <span className="tp-rf-sig">{c.signal_type}</span>
+                <span className="tp-rf-band">{c.band}</span>
+                <span className="tp-rf-rssi">{c.last_rssi != null ? Math.round(c.last_rssi)+'dBm' : '—'}</span>
+                <span className={c.correlated === false ? 'tp-rf-dark' : 'tp-rf-ok'}>
+                  {c.correlated === false ? 'NO RID' : 'RID ok'}
+                </span>
+                <span className="tp-rf-score" style={{ color: threatColor(c.threat_score) }}>
+                  {c.threat_score != null ? c.threat_score.toFixed(0) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="tp-body">
 

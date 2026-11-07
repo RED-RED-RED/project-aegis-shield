@@ -2,8 +2,53 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { useStore, selectActiveDrones, selectAllNodes, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
+import { useStore, selectActiveDrones, selectAllNodes, selectRfContacts,
+         RF_SIGNAL_LABELS, RF_BAND_LABELS, useUnits, fmtAlt, fmtSpeed, fmtDist } from '../store/useStore'
 import { colors } from '../theme/colors'
+
+// ── RF contact marker (SDR-classified link; no exact position) ──────────────
+function rfColor(c) {
+  if (c.correlated === false) return colors.threatHigh        // dark link
+  const s = c.threat_score
+  return s >= 70 ? colors.threatHigh : s >= 40 ? colors.threatMed : colors.steelBlueLight
+}
+function rfIcon(c) {
+  const color = rfColor(c)
+  const label = RF_SIGNAL_LABELS[c.signal_type] || c.signal_type || 'RF'
+  // A diamond, distinct from the round drone markers, with the signal label.
+  const html = `
+    <div style="position:relative;display:flex;align-items:center;justify-content:center;width:14px;height:14px;">
+      <div style="
+        position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+        font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:bold;
+        color:${color};background:rgba(21,24,20,0.95);padding:1px 4px;border-radius:2px;
+        border:1px solid ${color};white-space:nowrap;">${label}${c.correlated === false ? ' ⚠' : ''}</div>
+      <div style="width:10px;height:10px;background:${color};opacity:0.85;
+        transform:rotate(45deg);border:1px solid ${color};box-shadow:0 0 6px ${color};"></div>
+    </div>`
+  return L.divIcon({ html, className:'', iconSize:[14,28], iconAnchor:[7,7], popupAnchor:[0,-16] })
+}
+function rfPopupHtml(c, imperial) {
+  const color = rfColor(c)
+  const corr = c.correlated === false
+    ? `<span style="color:${colors.threatHigh}">NO Remote ID — possible non-compliant drone</span>`
+    : c.correlated === true
+      ? `<span style="color:${colors.threatLow}">Correlates with Remote ID ${c.correlated_drone_id || ''}</span>`
+      : '<span style="color:var(--text-muted)">correlation unknown</span>'
+  return `
+    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.7;min-width:190px;">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;
+        color:${color};margin-bottom:4px;text-transform:uppercase;">
+        ${RF_SIGNAL_LABELS[c.signal_type] || c.signal_type} <span style="color:var(--text-muted)">${RF_BAND_LABELS[c.band]||c.band}</span></div>
+      <div><span style="color:${colors.textMuted}">FREQ  </span>${c.center_freq_hz ? (c.center_freq_hz/1e6).toFixed(1)+' MHz' : '—'}</div>
+      <div><span style="color:${colors.textMuted}">RSSI  </span>${c.last_rssi != null ? Math.round(c.last_rssi)+' dBm' : '—'}</div>
+      <div><span style="color:${colors.textMuted}">CONF  </span>${c.confidence != null ? Math.round(c.confidence*100)+'%' : '—'}</div>
+      <div><span style="color:${colors.textMuted}">SCORE </span><span style="color:${color}">${c.threat_score != null ? c.threat_score.toFixed(0) : '—'}</span></div>
+      <div style="margin-top:3px;">${corr}</div>
+      <div style="margin-top:3px;color:${colors.textMuted}">seen by ${(c.detecting_nodes||[]).join(', ')}</div>
+      <div style="color:${colors.textMuted};font-size:8px;margin-top:2px;">ring = RSSI range estimate, not a position fix</div>
+    </div>`
+}
 
 // ── Threat-aware drone icon ────────────────────────────────────────────────
 function droneIcon(drone, imperial = false) {
@@ -146,9 +191,12 @@ export default function MapView() {
   const nodeMarkRef = useRef({})
   const tracksRef   = useRef({})
   const trackPtsRef = useRef({})
+  const rfMarkRef   = useRef({})
+  const rfCircRef   = useRef({})
 
   const drones      = useStore(selectActiveDrones)
   const nodes       = useStore(selectAllNodes)
+  const rfContacts  = useStore(selectRfContacts)
   const showMlat    = useStore(s => s.showMlatLayer)
   const selectDrone = useStore(s => s.selectDrone)
   const toggleMlat  = useStore(s => s.toggleMlatLayer)
@@ -282,6 +330,48 @@ export default function MapView() {
     }
   }, [drones, showMlat, selectDrone, imperial])
 
+  // ── RF contacts (SDR links) ───────────────────────────────────────────────
+  useEffect(() => {
+    const map = leafletRef.current
+    if (!map) return
+    const live = new Set(rfContacts.map(c => c.contact_id))
+
+    for (const id of Object.keys(rfMarkRef.current)) {
+      if (!live.has(id)) {
+        for (const r of [rfMarkRef, rfCircRef]) {
+          if (r.current[id]) { map.removeLayer(r.current[id]); delete r.current[id] }
+        }
+      }
+    }
+
+    for (const c of rfContacts) {
+      if (c.est_lat == null || c.est_lon == null) continue
+      const id = c.contact_id
+      const ll = [c.est_lat, c.est_lon]
+      const color = rfColor(c)
+      const radius = Math.max(c.est_radius_m ?? 500, 50)
+
+      if (rfCircRef.current[id]) {
+        rfCircRef.current[id].setLatLng(ll).setRadius(radius).setStyle({ color, fillColor: color })
+      } else {
+        rfCircRef.current[id] = L.circle(ll, {
+          radius, color, weight: 1, dashArray: '2 6',
+          fillColor: color, fillOpacity: 0.05,
+        }).addTo(map)
+      }
+
+      if (rfMarkRef.current[id]) {
+        rfMarkRef.current[id].setLatLng(ll).setIcon(rfIcon(c))
+        if (rfMarkRef.current[id].isPopupOpen())
+          rfMarkRef.current[id].setPopupContent(rfPopupHtml(c, imperial))
+      } else {
+        rfMarkRef.current[id] = L.marker(ll, { icon: rfIcon(c), zIndexOffset: 8 })
+          .bindPopup(rfPopupHtml(c, imperial), { maxWidth: 260 })
+          .addTo(map)
+      }
+    }
+  }, [rfContacts, imperial])
+
   useEffect(() => {
     const map = leafletRef.current
     if (!map) return
@@ -326,6 +416,11 @@ export default function MapView() {
               {i.label}
             </div>
           ))}
+          <div className="map-legend-item">
+            <div style={{width:9,height:9,background:'var(--amber)',transform:'rotate(45deg)',
+              boxShadow:'0 0 4px var(--amber)',flexShrink:0}}/>
+            RF link (SDR)
+          </div>
           <div className="map-legend-item">
             <div style={{width:9,height:9,borderRadius:'50%',border:`2px dashed ${colors.steelBlueLight}`,flexShrink:0}}/>
             MLAT estimate

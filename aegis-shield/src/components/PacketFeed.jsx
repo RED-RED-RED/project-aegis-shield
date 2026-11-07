@@ -68,6 +68,10 @@ const css = `
 .pf-type  {}
 .pf-wifi  { color: var(--ice); }
 .pf-bt    { color: var(--steel-blue-light); }
+.pf-sdr   { color: var(--amber); }
+.pf-row.rf { background: rgba(200,146,74,0.05); }
+.pf-dark  { color: var(--threat-high); font-weight: 600; }
+.pf-ok    { color: var(--threat-low); }
 .pf-band  {
   display: inline-flex;
   align-items: center;
@@ -127,6 +131,31 @@ export default function PacketFeed() {
             const timeStr = [t.getHours(), t.getMinutes(), t.getSeconds()]
               .map(n => n.toString().padStart(2,'0')).join(':')
             const isNew = i < 3
+
+            // RF (SDR) packet — different columns than a Remote ID detection.
+            if (pkt.kind === 'rf') {
+              const bandCls = pkt.band === '2g4' ? 'pf-band-24'
+                            : pkt.band === '5g8' ? 'pf-band-5' : 'pf-band-unk'
+              return (
+                <div key={`${pkt.ts}-${i}`} className={`pf-row rf ${isNew ? 'new' : ''}`}>
+                  <span className="pf-time">{timeStr}</span>
+                  <span className="pf-node">{pkt.node_id}</span>
+                  <span className="pf-type pf-sdr">SDR</span>
+                  <span className={`pf-band ${bandCls}`}>{pkt.band ?? '—'}</span>
+                  <span className="pf-data">
+                    <span className="pf-drone">{pkt.signal_type}</span>
+                    {' '}
+                    {pkt.rssi != null && `rssi=${Math.round(pkt.rssi)}dBm`}
+                    {' '}
+                    {pkt.confidence != null && `conf=${Math.round(pkt.confidence*100)}%`}
+                    {' '}
+                    {pkt.correlated
+                      ? <span className="pf-ok">[RID ok]</span>
+                      : <span className="pf-dark">[NO RID]</span>}
+                  </span>
+                </div>
+              )
+            }
 
             return (
               <div key={`${pkt.ts}-${i}`} className={`pf-row ${isNew ? 'new' : ''}`}>

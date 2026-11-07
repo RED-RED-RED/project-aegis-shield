@@ -1,23 +1,23 @@
 """
 scanner/sdr.py
 ==============
-Optional RTL-SDR energy scanner for sub-1.8 GHz drone control/video bands
-(433 / 868 / 915 MHz and 1.2 GHz; see SWEEP_FREQS).
+SDR scanner: sweeps a band plan, classifies each capture into a drone-relevant
+signal type (scanner/sdr_classify.py), and publishes classified links as
+argus/<node>/rf_detection. The server correlates these with Remote ID and
+flags links that have no Remote ID broadcast (likely non-compliant drones).
 
-This does NOT decode Remote ID — the Wi-Fi and BT scanners do that.  RTL-SDR
-tuners top out around 1.77 GHz, so 2.4 / 5.8 GHz links (DJI OcuSync/O4,
-ExpressLRS 2.4, most FPV video) are out of reach.  Bursts are published as
-rf_event messages; the server stores them but does not yet correlate them.
+This does NOT decode Remote ID — the Wi-Fi and BT scanners do that.
 
-Approach:
-  1. IQ sample each band in SWEEP_FREQS
-  2. Run energy detection across 2MHz sub-bands
-  3. Publish anomalous energy bursts to MQTT for central correlation
-  4. Central server cross-references with RID detections by timestamp/position
+Radio support (scanner/sdr_source.py):
+  HackRF One / Pro   1 MHz - 6 GHz: 2.4 GHz (ELRS/OcuSync), 5.8 GHz video,
+                     900 MHz, 1.2 GHz, 433 MHz. The full picture.
+  RTL-SDR            up to ~1.77 GHz: 433 / 900 / 1.2 GHz only. 2.4 and
+                     5.8 GHz are above its tuner and are skipped.
 
-Requires:
-  pip install pyrtlsdr numpy scipy
-  RTL-SDR drivers: sudo apt install rtl-sdr librtlsdr-dev
+The classifier thresholds are first-order and meant to be calibrated in the
+field with a known transmitter (see sdr_classify.py). Nothing here transmits:
+the HackRF's transmit path is never used. Jamming is illegal for non-federal
+operators; AEGIS is receive-only by design.
 """
 
 import logging
@@ -29,35 +29,44 @@ log = logging.getLogger("sdr")
 
 try:
     import numpy as np
-    from rtlsdr import RtlSdr
-    _SDR_AVAILABLE = True
+    _NUMPY = True
 except ImportError:
-    _SDR_AVAILABLE = False
-    log.warning("pyrtlsdr or numpy not installed — SDR scanner disabled")
+    _NUMPY = False
+    log.warning("numpy not installed — SDR scanner disabled")
+
+from scanner.sdr_classify import iq_to_spectrogram, classify
+from scanner.sdr_source import IQSource, make_source, SDRSourceError
 
 
-# Frequency bands reachable by R820T-based RTL-SDR dongles (max ~1,766 MHz).
-# 2.4 GHz is above the R820T ceiling — use ISM / hobby RC bands instead.
-# These correlate with unlicensed drone control links and FPV video downlinks.
-SWEEP_FREQS = [
-    433_920_000,     # 433 MHz ISM — hobby RC, some DJI remotes
-    868_000_000,     # 868 MHz — EU drone control links
-    915_000_000,     # 915 MHz — US ISM drone control links
-    1_200_000_000,   # 1.2 GHz — FPV analog video downlinks
-]
+# ── Band plan ────────────────────────────────────────────────────────────────
+# Each entry: band code -> list of centre frequencies (Hz) to step through.
+# Hopping links (ELRS/OcuSync) spread across a band, so a few 20 MHz windows
+# sample enough hops to classify. Video sits on a fixed channel, so 5.8 GHz is
+# stepped across the FPV band.
+def _range(lo, hi, step):
+    f = lo
+    out = []
+    while f <= hi:
+        out.append(int(f))
+        f += step
+    return out
 
-# R820T hardware ceiling — avoid segfaults from out-of-range tune attempts
-R820T_MAX_HZ = 1_766_000_000
+BAND_PLAN = {
+    "433": [433_900_000],
+    "900": [915_000_000],
+    "1g2": [1_260_000_000],
+    "2g4": [2_412_000_000, 2_437_000_000, 2_462_000_000],
+    "5g8": _range(5_660_000_000, 5_940_000_000, 40_000_000),
+}
 
-SAMPLE_RATE    = 2_400_000   # 2.4 MSPS — covers 2.4 MHz per tune
-NUM_SAMPLES    = 256_000     # ~107 ms per capture
-ENERGY_THRESH  = 15.0        # dB above noise floor to flag
+BAND_ORDER = ["2g4", "5g8", "900", "1g2", "433"]
 
 
 class SDRScanner:
     """
-    RTL-SDR energy scanner. Sweeps the SWEEP_FREQS bands and publishes
-    anomalous RF bursts to the AEGIS platform for correlation.
+    Sweeps the band plan, classifies, and publishes classified RF links.
+    Backward-compatible constructor; extra behaviour is opt-in via kwargs or
+    node config.
     """
 
     def __init__(
@@ -67,95 +76,155 @@ class SDRScanner:
         gps,
         node_id: str,
         stop_event: threading.Event,
+        backend: str = "rtlsdr",
+        sample_rate: Optional[float] = None,
+        source: Optional[IQSource] = None,   # inject for tests
+        bands: Optional[list[str]] = None,
+        dwell_s: float = 0.04,
+        min_confidence: float = 0.6,
+        publish_interval_s: float = 3.0,
+        rssi_offset_dbm: float = -50.0,
     ):
         self.device_index = device_index
         self.publisher = publisher
         self.gps = gps
         self.node_id = node_id
         self.stop_event = stop_event
-        self._noise_floor: dict[int, float] = {}
+        self.backend = backend
+        self.sample_rate = sample_rate
+        self._source = source
+        self.bands = bands
+        self.dwell_s = dwell_s
+        self.min_confidence = min_confidence
+        self.publish_interval_s = publish_interval_s
+        self.rssi_offset_dbm = rssi_offset_dbm
+        self._last_pub: dict[str, float] = {}
+        self._stats = {"captures": 0, "classified": 0, "published": 0}
+        self._last_stats = time.monotonic()
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     def run(self):
-        if not _SDR_AVAILABLE:
-            log.error("SDR libraries not available — scanner exiting")
+        if not _NUMPY:
+            log.error("numpy not available — SDR scanner exiting")
             return
 
-        log.info(f"SDR scanner starting (device {self.device_index})")
-
+        source = self._source
+        if source is None:
+            try:
+                source = make_source(self.backend, device_index=self.device_index,
+                                     sample_rate=self.sample_rate)
+            except SDRSourceError as e:
+                log.error(f"SDR backend unavailable: {e}. SDR scanner exiting.")
+                return
         try:
-            sdr = RtlSdr(self.device_index)
-            sdr.sample_rate   = SAMPLE_RATE
-            sdr.gain          = "auto"
-        except Exception as e:
-            log.error(f"Failed to open RTL-SDR device {self.device_index}: {e}")
+            source.open()
+        except SDRSourceError as e:
+            log.error(f"Could not open SDR: {e}. SDR scanner exiting.")
             return
 
+        steps = self._build_steps(source)
+        if not steps:
+            log.error(f"No scan bands reachable by {source.name}. SDR scanner exiting.")
+            source.close()
+            return
+
+        bands_seen = sorted({b for b, _ in steps})
+        log.info(f"SDR scanner running on {source.name}: bands {', '.join(bands_seen)}, "
+                 f"{len(steps)} steps, {source.sample_rate/1e6:.0f} MS/s")
+
+        n = max(iq_to_spectrogram_min(), int(source.sample_rate * self.dwell_s))
         try:
             while not self.stop_event.is_set():
-                for freq in SWEEP_FREQS:
+                for band, center in steps:
                     if self.stop_event.is_set():
                         break
-                    self._scan_freq(sdr, freq)
-                    time.sleep(0.05)   # Brief dwell between tunes
+                    self._scan_step(source, band, center, n)
+                self._log_stats()
         finally:
-            sdr.close()
+            source.close()
             log.info("SDR scanner stopped.")
 
-    def _scan_freq(self, sdr, freq: int):
-        if freq > R820T_MAX_HZ:
-            log.warning(f"Skipping {freq/1e6:.1f} MHz — above R820T hardware ceiling ({R820T_MAX_HZ/1e6:.0f} MHz)")
-            return
+    def _build_steps(self, source: IQSource) -> list[tuple[str, int]]:
+        bands = self.bands or BAND_ORDER
+        steps: list[tuple[str, int]] = []
+        skipped = set()
+        for band in bands:
+            for center in BAND_PLAN.get(band, []):
+                if source.can_tune(center):
+                    steps.append((band, center))
+                else:
+                    skipped.add(band)
+        if skipped:
+            log.info(f"{source.name} can't reach {', '.join(sorted(skipped))} "
+                     f"(out of tuning range) — skipping")
+        return steps
+
+    # ── One capture ───────────────────────────────────────────────────────────
+
+    def _scan_step(self, source: IQSource, band: str, center: int, n: int):
         try:
-            sdr.center_freq = freq
-            samples = sdr.read_samples(NUM_SAMPLES)
+            source.set_center(center)
+            iq = source.read(n)
         except Exception as e:
-            log.debug(f"SDR read error at {freq/1e6:.1f} MHz: {e}")
+            log.debug(f"SDR read error at {center/1e6:.1f} MHz: {e}")
+            return
+        if iq is None or len(iq) < iq_to_spectrogram_min():
             return
 
-        # Power spectral density (simple FFT-based)
-        power_db = self._compute_power_db(samples)
-
-        # Calibrate noise floor (rolling average over first 10 samples)
-        if freq not in self._noise_floor:
-            self._noise_floor[freq] = power_db
+        self._stats["captures"] += 1
+        spec = iq_to_spectrogram(iq, source.sample_rate)
+        c = classify(spec, band)
+        if c.signal_type == "unknown" or c.confidence < self.min_confidence:
             return
+        self._stats["classified"] += 1
 
-        alpha = 0.05   # Slow tracking of noise floor
-        self._noise_floor[freq] = (1 - alpha) * self._noise_floor[freq] + alpha * power_db
+        key = f"{band}:{c.signal_type}"
+        now = time.monotonic()
+        last = self._last_pub.get(key)
+        # A missing key means this type has never been published, so publish it
+        # now. Using 0.0 as the sentinel would wrongly suppress the first
+        # detection whenever the monotonic clock reads below publish_interval_s
+        # (e.g. on a freshly booted node).
+        if last is not None and now - last < self.publish_interval_s:
+            return
+        self._last_pub[key] = now
 
-        snr = power_db - self._noise_floor[freq]
-
-        if snr > ENERGY_THRESH:
-            log.debug(f"RF burst @ {freq/1e6:.1f} MHz: {power_db:.1f} dBm (SNR={snr:.1f} dB)")
-            self._publish_rf_event(freq, power_db, snr)
-
-    def _compute_power_db(self, samples) -> float:
-        """Estimate total band power in dBm (relative, not calibrated)."""
-        import numpy as np
-        power_linear = np.mean(np.abs(samples) ** 2)
-        if power_linear <= 0:
-            return -100.0
-        return float(10 * np.log10(power_linear))
-
-    def _publish_rf_event(self, freq: int, power_db: float, snr: float):
-        """Publish an RF anomaly event to MQTT for central correlation."""
-        payload = {
-            "node_id": self.node_id,
-            "type": "rf_burst",
-            "freq_hz": freq,
-            "power_db": round(power_db, 2),
-            "snr_db": round(snr, 2),
-            "node_position": {
-                "lat": self.gps.lat,
-                "lon": self.gps.lon,
-                "alt": self.gps.alt,
-            },
-            "ts": time.time(),
+        f = c.features
+        bandwidth = int(max(c.burst_bw_hz, c.occupied_bw_hz))
+        signal = {
+            "signal_type":   c.signal_type,
+            "band":          band,
+            "center_freq_hz": int(center + c.center_offset_hz),
+            "bandwidth_hz":  bandwidth,
+            "rssi":          round(f.get("peak_dbfs", -100.0) + self.rssi_offset_dbm, 1),
+            "snr_db":        round(f.get("snr_db", 0.0), 1),
+            "confidence":    round(c.confidence, 2),
+            "hop_rate_hz":   round(c.burst_rate_hz, 1),
+            "burst_rate_hz": round(c.burst_rate_hz, 1),
         }
-        # Publish to a separate topic so the server can correlate independently
-        import json
-        topic = f"argus/{self.node_id}/rf_event"
         try:
-            self.publisher._enqueue(topic, payload, qos=0)
+            self.publisher.publish_rf_detection(signal, self.gps)
+            self._stats["published"] += 1
+            log.info(f"RF link: {c.signal_type} @ {band} "
+                     f"{signal['center_freq_hz']/1e6:.1f} MHz "
+                     f"rssi={signal['rssi']:.0f} conf={c.confidence:.0%}")
         except Exception as e:
-            log.debug(f"RF event publish error: {e}")
+            log.debug(f"rf_detection publish error: {e}")
+
+    def _log_stats(self):
+        now = time.monotonic()
+        if now - self._last_stats < 60.0:
+            return
+        s = self._stats
+        log.info(f"SDR stats (last {int(now - self._last_stats)} s): "
+                 f"{s['captures']} captures, {s['classified']} classified, "
+                 f"{s['published']} published")
+        self._stats = {"captures": 0, "classified": 0, "published": 0}
+        self._last_stats = now
+
+
+def iq_to_spectrogram_min() -> int:
+    """Minimum sample count worth analysing (one FFT window)."""
+    from scanner.sdr_classify import STFT_WIN
+    return STFT_WIN

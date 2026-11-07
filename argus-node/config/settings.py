@@ -65,10 +65,15 @@ class NodeConfig:
     bt_backend: str = "auto"             # auto | hci | bleak  (hci = direct controller access, see scanner/hci_le.py)
 
     # ---- SDR ----
-    sdr_enabled: bool = False            # Optional; enable if RTL-SDR is attached
+    sdr_enabled: bool = False            # Optional; enable if an SDR is attached
     sdr_device_index: int = 0
-    sdr_sample_rate: int = 2_400_000
-    sdr_center_freq: int = 2_437_000_000  # 2.4 GHz center
+    sdr_backend: str = "rtlsdr"          # rtlsdr | hackrf (hackrf reaches 2.4/5.8 GHz)
+    sdr_sample_rate: int = 0             # 0 = backend default (20 MHz hackrf, 2.4 MHz rtlsdr)
+    sdr_center_freq: int = 2_437_000_000  # legacy single-freq (unused by the sweep scanner)
+    sdr_dwell_s: float = 0.04            # capture length per band step
+    sdr_min_confidence: float = 0.6      # publish classified links at/above this confidence
+    sdr_publish_interval_s: float = 3.0  # per (band, signal type) rate limit
+    sdr_rssi_offset_dbm: float = -50.0   # uncalibrated: maps peak dBFS to a pseudo-dBm
 
     # ---- Agent behaviour ----
     heartbeat_interval_s: int = 10

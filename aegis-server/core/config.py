@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     alert_speed_threshold_ms: float = 30.0     # Flag suspiciously fast drones
     alert_dedup_window_s: int = 60             # Don't re-alert for same drone within window
 
+    # RF contacts (SDR-classified links)
+    rf_correlation_window_s: int = 20          # RID track must be this fresh to correlate
+    rf_correlation_radius_m: float = 750.0     # ...and within this distance of the node
+    rf_alert_min_confidence: float = 0.6       # Below this, don't raise an RF alert
+    rf_contact_ttl_s: int = 120                # Drop RF contacts from live state after this
+
     # ---- WebSocket ----
     ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms
 

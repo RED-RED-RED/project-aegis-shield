@@ -25,12 +25,35 @@ from pydantic import ValidationError
 
 from core.config import Settings
 from db.database import get_pool
-from models.schemas import DetectionEvent, NodeHeartbeat
+from models.schemas import DetectionEvent, NodeHeartbeat, RFDetectionEvent
 from mqtt.alert_engine import AlertEngine
 from mqtt.ws_broadcaster import WSBroadcaster
 from analysis.pipeline import AnalysisPipeline
+from analysis.rf_scoring import score_rf_contact
 
 log = logging.getLogger("mqtt")
+
+
+def _haversine_m(lat1, lon1, lat2, lon2) -> float:
+    """Great-circle distance in metres."""
+    from math import radians, sin, cos, asin, sqrt
+    r = 6371000.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * r * asin(sqrt(a))
+
+
+def _rssi_range_m(rssi: float) -> float:
+    """
+    Very rough distance ring from RSSI, for drawing a single-node contact.
+    Not calibrated: -40 dBm ~ 50 m (close), -90 dBm ~ 2 km (far). Clamped.
+    This is a visual aid, never a position fix.
+    """
+    if rssi is None:
+        return 1000.0
+    frac = min(max((-40 - rssi) / 50.0, 0.0), 1.0)   # 0 at -40, 1 at -90
+    return 50.0 + frac * 1950.0
 
 
 class MQTTSubscriber:
@@ -77,6 +100,7 @@ class MQTTSubscriber:
             await client.subscribe(f"{prefix}/+/heartbeat")
             await client.subscribe(f"{prefix}/+/status")
             await client.subscribe(f"{prefix}/+/rf_event")
+            await client.subscribe(f"{prefix}/+/rf_detection")
             log.info(f"Subscribed to {prefix}/#")
 
             async for message in client.messages:
@@ -106,6 +130,8 @@ class MQTTSubscriber:
             await self._handle_status(payload)
         elif msg_type == "rf_event":
             await self._handle_rf_event(payload)
+        elif msg_type == "rf_detection":
+            await self._handle_rf_detection(payload)
 
     # ------------------------------------------------------------------ #
     # Detection handler
@@ -343,6 +369,119 @@ class MQTTSubscriber:
                 payload.get("node_position", {}).get("lon"),
                 payload.get("node_position", {}).get("alt"),
             )
+
+    # ------------------------------------------------------------------ #
+    # RF detection handler (classified SDR links)
+    # ------------------------------------------------------------------ #
+
+    async def _handle_rf_detection(self, payload: dict):
+        try:
+            event = RFDetectionEvent(**payload)
+        except ValidationError as e:
+            log.warning(f"RF detection validation error: {e}")
+            return
+
+        sig = event.signal
+        contact_id = event.contact_key or f"{event.node_id}:{sig.signal_type}:{sig.band}"
+
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            # ── Correlate with Remote ID ──────────────────────────────────
+            # A link that classifies as a drone but has no Remote ID track
+            # near the detecting node is a likely non-compliant drone.
+            correlated, corr_drone_id = await self._correlate_rf(conn, event)
+
+            est_lat = event.node_position.lat
+            est_lon = event.node_position.lon
+            est_radius = _rssi_range_m(sig.rssi)
+
+            # ── Upsert the live contact ──────────────────────────────────
+            row = await conn.fetchrow("""
+                INSERT INTO rf_contacts (
+                    contact_id, first_seen, last_seen, signal_type, band,
+                    center_freq_hz, bandwidth_hz, last_rssi, best_rssi,
+                    confidence, hop_rate_hz, detecting_nodes, detection_count,
+                    correlated, correlated_drone_id, compliant,
+                    est_lat, est_lon, est_radius_m
+                ) VALUES (
+                    $1, to_timestamp($2), to_timestamp($2), $3, $4,
+                    $5, $6, $7, $7,
+                    $8, $9, ARRAY[$10], 1,
+                    $11, $12, $13,
+                    $14, $15, $16
+                )
+                ON CONFLICT (contact_id) DO UPDATE SET
+                    last_seen       = to_timestamp($2),
+                    center_freq_hz  = $5,
+                    bandwidth_hz    = $6,
+                    last_rssi       = $7,
+                    best_rssi       = GREATEST(rf_contacts.best_rssi, $7),
+                    confidence      = $8,
+                    hop_rate_hz     = $9,
+                    detecting_nodes = (
+                        SELECT ARRAY(SELECT DISTINCT unnest(
+                            rf_contacts.detecting_nodes || ARRAY[$10]))
+                    ),
+                    detection_count = rf_contacts.detection_count + 1,
+                    correlated          = $11,
+                    correlated_drone_id = COALESCE($12, rf_contacts.correlated_drone_id),
+                    compliant           = $13,
+                    est_lat         = $14,
+                    est_lon         = $15,
+                    est_radius_m    = $16
+                RETURNING contact_id, signal_type, band, best_rssi, last_rssi,
+                          detecting_nodes, detection_count, correlated
+            """,
+                contact_id, event.ts, sig.signal_type, sig.band,
+                sig.center_freq_hz, sig.bandwidth_hz, sig.rssi,
+                sig.confidence, sig.hop_rate_hz, event.node_id,
+                correlated, corr_drone_id, (True if correlated else False),
+                est_lat, est_lon, est_radius,
+            )
+
+            # ── Score and persist threat ─────────────────────────────────
+            contact = dict(row)
+            threat = score_rf_contact(contact)
+            await conn.execute(
+                "UPDATE rf_contacts SET threat_score=$2, threat_level=$3 WHERE contact_id=$1",
+                contact_id, threat.score, threat.level,
+            )
+
+        # ── Alerts (outside the DB transaction) ──────────────────────────
+        await self.alert_engine.evaluate_rf(event, contact_id, threat, correlated, corr_drone_id)
+
+        # ── Broadcast to the packet feed ─────────────────────────────────
+        await self.broadcaster.broadcast_rf_detection(
+            event, contact_id, threat, correlated, est_lat, est_lon, est_radius
+        )
+
+    async def _correlate_rf(self, conn, event: RFDetectionEvent):
+        """
+        Return (correlated: bool, drone_id | None).
+
+        Correlated when an active Remote ID track sits within
+        rf_correlation_radius_m of the detecting node inside the time window.
+        One node can't position the emitter, so proximity to the node is the
+        honest test: if a compliant drone is right here, this link is probably
+        it; if nothing is broadcasting RID nearby, the link is dark.
+        """
+        window = getattr(self.settings, "rf_correlation_window_s", 20)
+        radius = getattr(self.settings, "rf_correlation_radius_m", 750.0)
+        rows = await conn.fetch(
+            """SELECT drone_id, lat, lon FROM drone_tracks
+               WHERE last_seen > NOW() - ($1 || ' seconds')::interval
+                 AND lat IS NOT NULL AND lon IS NOT NULL""",
+            str(window),
+        )
+        nlat, nlon = event.node_position.lat, event.node_position.lon
+        best = None
+        best_d = radius
+        for r in rows:
+            d = _haversine_m(nlat, nlon, r["lat"], r["lon"])
+            if d <= best_d:
+                best_d = d
+                best = r["drone_id"]
+        return (best is not None), best
 
     def get_detection_rate(self) -> float:
         """Detections per minute over last 5 minutes."""

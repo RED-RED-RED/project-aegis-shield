@@ -111,6 +111,33 @@ class WSBroadcaster:
             }
         })
 
+    async def broadcast_rf_detection(self, event, contact_id, threat, correlated,
+                                     est_lat, est_lon, est_radius) -> None:
+        """Push a classified RF link to the packet feed and RF layer."""
+        if _manager.count == 0:
+            return
+        sig = event.signal
+        await _manager.broadcast({
+            "type": "rf_detection",
+            "payload": {
+                "contact_id":   contact_id,
+                "node_id":      event.node_id,
+                "signal_type":  sig.signal_type,
+                "band":         sig.band,
+                "center_freq_hz": sig.center_freq_hz,
+                "rssi":         sig.rssi,
+                "confidence":   sig.confidence,
+                "correlated":   correlated,
+                "compliant":    bool(correlated),
+                "threat_score": round(threat.score, 1),
+                "threat_level": threat.level,
+                "est_lat":      est_lat,
+                "est_lon":      est_lon,
+                "est_radius_m": est_radius,
+                "ts":           event.ts,
+            }
+        })
+
     async def broadcast_alert(self, alert: dict) -> None:
         """Push a new alert to all clients."""
         await _manager.broadcast({
