@@ -28,6 +28,7 @@ from db.database import get_pool
 from models.schemas import DetectionEvent, NodeHeartbeat, RFDetectionEvent
 from mqtt.alert_engine import AlertEngine
 from mqtt.ws_broadcaster import WSBroadcaster
+from mqtt.notifier import notifier
 from analysis.pipeline import AnalysisPipeline
 from analysis.rf_scoring import score_rf_contact
 
@@ -340,6 +341,10 @@ class MQTTSubscriber:
 
         # Fire GPS jamming alert if needed
         await self.alert_engine.evaluate_heartbeat(hb)
+
+        # Critical node-health pushes (temp/disk) — fire-and-forget.
+        for kind, detail in notifier.maybe_health_from_heartbeat(hb.node_id, hb.system):
+            asyncio.create_task(notifier.notify_health(hb.node_id, kind, detail))
 
         await self.broadcaster.broadcast_node_update(hb.node_id, "online", payload)
 

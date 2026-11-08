@@ -129,21 +129,25 @@ Reference build for the current field node. Prices are rough street figures and 
 | Part | Example | Role | ~Cost |
 |---|---|---|---|
 | Single-board computer | Raspberry Pi 5 Model B (8 GB) | Host | $80 |
-| Active cooler | Pi 5 active cooler / heatsink | Thermal | $10 |
+| Active cooler | GeeekPi Armor Lite V5 | Thermal | $12 |
 | Boot storage | microSD (A2) or NVMe + HAT | OS + local cache | $15–40 |
-| UPS | Pi 5 UPS HAT (18650) | Ride-through power + clean shutdown | $35–50 |
+| UPS | Geekworm X1202 (5 V out, 6–18 V in) | Ride-through power + clean shutdown | $55 |
 | Wi-Fi adapter | Alfa AWUS036ACM | Wi-Fi NAN monitor mode (mt76x2u) | $60 |
 | Bluetooth dongle | Nordic nRF52840 Dongle (PCA10059) | BT4 + BT5 Long Range (Coded PHY) | $11 |
 | GPS module | u-blox NEO-M9N (USB) | Geolocation + jamming/spoofing detection | $77 |
-| Active GPS antenna | SMA active patch/puck antenna | GPS reception (see note — quality varies a lot) | $10–15 |
+| Active GPS antenna | SMA active patch/puck (external) | GPS reception — quality matters a lot (see note) | ~$30 |
 | SDR | RTL-SDR Blog V4 (HackRF for 2.4/5.8 GHz) | RF link detection | $40 (HackRF $300+) |
-| Wi-Fi / SDR antennas + pigtails | SMA/RP-SMA whips + bulkhead pigtails | External RF, panel-mounted | $20–30 |
+| Wi-Fi antennas | Dual-band 6 dBi N-male omni ×2 (e.g. MikroTik Groove spares) | External Wi-Fi | $0 on hand (~$26 new) |
 | Enclosure | Weatherproof outdoor hotspot kit (RAK/MNTD style) | IP-rated housing | $60 |
-| External antenna + mount | 4 dBi N-male fiberglass + bracket | Outdoor comms | $20 |
-| Panel hardware | Vent/breather, bulkhead GPS connector, status LED, power button | Enclosure I/O | $35–45 |
-| Cables & connectors | USB, SMA, pigtails, adapters | Interconnect | $40–70 |
+| RF cabling & adapters | RG316 SMA/N pigtails, bulkhead panel mounts, SMA/RP-SMA adapter kit | Panel-mount RF interconnect | ~$42 |
+| USB cabling | USB-A 3.0, USB-C 3.1 Gen2, USB-A extension (1 ft) | Peripheral interconnect | ~$24 |
+| Panel hardware | Waterproof momentary power button, IP68 breather vent, status LED | Enclosure I/O | ~$25 |
 
-Roughly **$550–650** per node with the RTL-SDR. Swapping in a HackRF (for 2.4/5.8 GHz coverage) adds ~$300+. Several items (GPS module, storage) you may already have on hand.
+Roughly **$550–600** per node with the RTL-SDR. Swapping in a HackRF (for 2.4/5.8 GHz coverage) adds ~$300+. Several items (GPS module, Wi-Fi antennas, storage) you may already have on hand.
+
+**Enclosure fit** — space is tight. Fitting a HackRF alongside the Alfa, GPS and nRF52840 likely means shorter USB cables and adding a compact **powered USB hub** (~$15–25) to supply the Alfa + HackRF current draw without browning out the Pi. Budget room (and amps) for it.
+
+**Test equipment (not part of a node)** — a cooperative Remote ID broadcaster such as the **Ruko R111S** (~$40) is useful for validating detection end-to-end: fly or bench it and confirm the node picks it up on the map.
 
 ### AEGIS Server (~$150–250)
 
@@ -224,6 +228,25 @@ X-Api-Key: your-secret-key-here
 ```
 
 The `/health` endpoint is always unauthenticated. It returns server CPU/memory/disk usage, database connectivity status, MQTT reachability (based on last node heartbeat), and online/total node counts — used by the AEGIS Shield Server Health panel.
+
+### Notifications (Pushover)
+
+Push alerts to your phone with [Pushover](https://pushover.net/). **Disabled by default.** Create a Pushover **application** for the API token, grab your **user key** (or a delivery-group key for a team), and set both in `aegis-server/docker/.env`:
+
+```env
+PUSHOVER_ENABLED=true
+PUSHOVER_TOKEN=your-pushover-app-token
+PUSHOVER_USER=your-user-or-group-key
+```
+
+Behaviour (all configurable — see `.env.example`):
+
+- **HIGH** alerts push at priority 1 (loud, bypasses the phone's quiet hours); **MEDIUM** at priority 0. `PUSHOVER_MIN_LEVEL` sets the floor (default `medium`); LOW alerts like `new_drone` never push.
+- Categories in `PUSHOVER_EMERGENCY_CATEGORIES` (e.g. `spoofed_position,gps_jamming`) go **Emergency** (priority 2 — repeats until acknowledged on the phone) and bypass the level floor.
+- A **per-drone cooldown** (default 10 min) stops a loitering contact from buzzing every cycle; an escalation to a higher level breaks through it. A **max-per-hour** cap guards against floods.
+- **Critical node health** pushes separately: a node going offline, or CPU temp / disk crossing `PUSHOVER_TEMP_CRIT_C` / `PUSHOVER_DISK_CRIT_PCT` (warnings don't push — critical only).
+
+After enabling and redeploying, verify with `POST /api/notify/test` (fires a sample push). Sends are fire-and-forget and never block or crash the alert pipeline.
 
 If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
 
@@ -475,6 +498,13 @@ GET  /api/flights                       Flight list (filter: range, compliant, n
 GET  /api/flights/{id}                  Flight detail — path, operator, detecting nodes, profile
 GET  /api/flights/{id}/export?format=   gpx | kml | csv download
 GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
+```
+
+### Notifications
+
+```
+GET  /api/notify/status                 Pushover config state (no secrets)
+POST /api/notify/test                   Fire a sample push to verify setup
 ```
 
 ### Alert categories

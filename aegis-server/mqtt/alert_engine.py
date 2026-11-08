@@ -17,6 +17,7 @@ Alert deduplication:
   alert was generated within alert_dedup_window_s seconds.
 """
 
+import asyncio
 import logging
 import time
 from collections import defaultdict
@@ -25,6 +26,7 @@ from core.config import Settings
 from db.database import get_pool
 from models.schemas import DetectionEvent, NodeHeartbeat
 from mqtt.ws_broadcaster import WSBroadcaster
+from mqtt.notifier import notifier
 
 log = logging.getLogger("alerts")
 
@@ -260,3 +262,8 @@ class AlertEngine:
 
         # Push to WebSocket clients
         await self.broadcaster.broadcast_alert(dict(row))
+
+        # Fire-and-forget outbound notification (Pushover). Never blocks the
+        # alert pipeline; the notifier gates by level/cooldown and swallows
+        # its own errors.
+        asyncio.create_task(notifier.notify_alert(dict(row)))

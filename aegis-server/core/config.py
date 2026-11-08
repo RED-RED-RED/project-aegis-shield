@@ -76,6 +76,30 @@ class Settings(BaseSettings):
     detection_retention_days: int = 30
     alert_retention_days: int = 90
 
+    # ---- Notifications (Pushover) ----
+    # Disabled by default. Create a Pushover application for the API token and
+    # use your user key or a delivery-group key as the recipient. Secrets go in
+    # .env (gitignored), never in the repo.
+    pushover_enabled: bool = False
+    pushover_token: str = ""                     # Pushover application API token
+    pushover_user: str = ""                      # user key OR delivery-group key
+    pushover_min_level: str = "medium"           # medium | high — alerts below this don't push
+    pushover_cooldown_s: int = 600               # per-drone/node re-push cooldown (escalation overrides)
+    pushover_max_per_hour: int = 30              # global safety cap against floods
+    # Categories that go Pushover Emergency (priority 2 — repeats until acked).
+    # CSV, e.g. "spoofed_position,gps_jamming". Overrides min_level for those.
+    pushover_emergency_categories: str = ""
+    pushover_emergency_retry_s: int = 60         # Emergency repeat interval (>=30)
+    pushover_emergency_expire_s: int = 1800      # Emergency stops repeating after this
+    # Critical node-health pushes (separate from drone alerts).
+    pushover_health_enabled: bool = True
+    pushover_temp_crit_c: float = 80.0           # Push when a node's CPU temp >= this
+    pushover_disk_crit_pct: float = 95.0         # Push when a node's disk use >= this
+
+    @property
+    def pushover_emergency_set(self) -> set[str]:
+        return {c.strip() for c in self.pushover_emergency_categories.split(",") if c.strip()}
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 
