@@ -1,7 +1,5 @@
 # AEGIS Platform
 
-[![CI](https://github.com/RED-RED-RED/project-aegis-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/RED-RED-RED/project-aegis-shield/actions/workflows/ci.yml)
-
 > **A**irspace **E**nforcement and **G**round **I**ntelligence **S**ystem  
 > Multi-node Remote ID detection, threat scoring, and MLAT position estimation
 
@@ -215,13 +213,9 @@ The four containers that start together:
 | `mosquitto` | 1883 | MQTT broker (authenticated) |
 | `timescaledb` | 5432 (internal) | Time-series database |
 
-### Security posture — trusted LAN only
-
-> ⚠️ **AEGIS ships wide open by design.** Authentication is **disabled by default**, and the Settings page (below) lets anyone who can reach the dashboard change system config — including setting secrets like the Pushover token — with no login. Secrets set from the GUI are stored in the database (the `settings` table) in plaintext, which is acceptable only because the database is internal to the trusted deployment. **Do not expose any AEGIS port to the internet.** If the server must be reachable remotely, put it behind a VPN (there's a WireGuard helper) and enable the API key below. There is no user management, role separation, or audit log.
-
 ### API authentication
 
-All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default**. To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
+All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default** (safe for trusted LAN deployments). To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
 
 ```env
 AEGIS_API_KEY=your-secret-key-here
@@ -234,25 +228,6 @@ X-Api-Key: your-secret-key-here
 ```
 
 The `/health` endpoint is always unauthenticated. It returns server CPU/memory/disk usage, database connectivity status, MQTT reachability (based on last node heartbeat), and online/total node counts — used by the AEGIS Shield Server Health panel.
-
-### Notifications (Pushover)
-
-Push alerts to your phone with [Pushover](https://pushover.net/). **Disabled by default.** Create a Pushover **application** for the API token, grab your **user key** (or a delivery-group key for a team), and set both in `aegis-server/docker/.env`:
-
-```env
-PUSHOVER_ENABLED=true
-PUSHOVER_TOKEN=your-pushover-app-token
-PUSHOVER_USER=your-user-or-group-key
-```
-
-Behaviour (all configurable — see `.env.example`):
-
-- **HIGH** alerts push at priority 1 (loud, bypasses the phone's quiet hours); **MEDIUM** at priority 0. `PUSHOVER_MIN_LEVEL` sets the floor (default `medium`); LOW alerts like `new_drone` never push.
-- Categories in `PUSHOVER_EMERGENCY_CATEGORIES` (e.g. `spoofed_position,gps_jamming`) go **Emergency** (priority 2 — repeats until acknowledged on the phone) and bypass the level floor.
-- A **per-drone cooldown** (default 10 min) stops a loitering contact from buzzing every cycle; an escalation to a higher level breaks through it. A **max-per-hour** cap guards against floods.
-- **Critical node health** pushes separately: a node going offline, or CPU temp / disk crossing `PUSHOVER_TEMP_CRIT_C` / `PUSHOVER_DISK_CRIT_PCT` (warnings don't push — critical only).
-
-After enabling and redeploying, verify with `POST /api/notify/test` (fires a sample push). Sends are fire-and-forget and never block or crash the alert pipeline.
 
 If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
 
@@ -410,7 +385,7 @@ AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a f
 | **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, spoof confidence meter, and an "RF / No RID" strip. Live drones show solid; stale ones (>2 min) are dimmed. |
 | **Packet Feed** | Detection stream pre-seeded with the last 150 detections on load, then live via WebSocket. Includes SDR-classified RF links with RID / no-RID tags. |
 | **Flights** | Historical sorties — detections grouped into flights (new flight after a >5 min gap). Filterable flight list; the selected flight shows its path, operator location, detecting nodes, altitude/speed profile, a time-scrub replay, and GPX/KML/CSV export. No-RID / RF-only contacts are listed separately. |
-| **System** | Live status cards for every node and the server (CPU/mem/disk, temp, uptime, GPS sats, DB/MQTT) plus historical charts (1h–7d range, ~7-day retention) with warning bands. A **Settings** sub-tab edits notification and live-map config live (no redeploy, no auth) and shows the rest read-only. |
+| **System** | Live status cards for every node and the server (CPU/mem/disk, temp, uptime, GPS sats, DB/MQTT) plus historical charts (1h–7d range, ~7-day retention) with warning bands. |
 
 ### Sidebar
 
@@ -504,20 +479,6 @@ GET  /api/flights                       Flight list (filter: range, compliant, n
 GET  /api/flights/{id}                  Flight detail — path, operator, detecting nodes, profile
 GET  /api/flights/{id}/export?format=   gpx | kml | csv download
 GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
-```
-
-### Notifications
-
-```
-GET  /api/notify/status                 Pushover config state (no secrets)
-POST /api/notify/test                   Fire a sample push to verify setup
-```
-
-### Settings
-
-```
-GET  /api/settings                      Editable + read-only config (secrets masked)
-PUT  /api/settings                       Apply {key: value} for editable keys — live, no restart
 ```
 
 ### Alert categories
@@ -620,8 +581,6 @@ The R820T tuner cannot tune above ~1,766 MHz. If you have modified `SWEEP_FREQS`
 ```bash
 # Run all 311 tests
 make test
-# GitHub Actions runs every suite + the dashboard build on each push
-# (.github/workflows/ci.yml). It tests only — it never deploys.
 
 # Individual suites
 make test-node     # 200 tests — RID parser, GPS, Wi-Fi NAN, Bluetooth HCI, SDR classifier (scapy required for Wi-Fi NAN)
