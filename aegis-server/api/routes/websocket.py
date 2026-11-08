@@ -19,6 +19,7 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from core.config import get_settings
+from core import runtime_settings as rt
 from db.database import get_pool
 from mqtt.ws_broadcaster import get_manager
 
@@ -90,7 +91,7 @@ async def _build_live_state() -> dict:
                    has_valid_rid, detection_count, detecting_nodes,
                    EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS age_s
             FROM drone_tracks
-            WHERE last_seen > NOW() - INTERVAL '{settings.live_window_s} seconds'
+            WHERE last_seen > NOW() - INTERVAL '{rt.get("live_window_s")} seconds'
             ORDER BY last_seen DESC
         """)
 
@@ -132,7 +133,7 @@ async def _build_live_state() -> dict:
                        est_lat, est_lon, est_radius_m, threat_score, threat_level,
                        EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS age_s
                 FROM rf_contacts
-                WHERE last_seen > NOW() - INTERVAL '{settings.live_window_s} seconds'
+                WHERE last_seen > NOW() - INTERVAL '{rt.get("live_window_s")} seconds'
                 ORDER BY threat_score DESC NULLS LAST, last_seen DESC
             """)
         except Exception:
@@ -144,7 +145,7 @@ async def _build_live_state() -> dict:
         "recent_alerts":  [_row_to_dict(r) for r in alert_rows],
         "rf_contacts":    [_row_to_dict(r) for r in rf_rows],
         "detection_rate": det_rate,
-        "live_active_s":  settings.live_active_s,
+        "live_active_s":  rt.get("live_active_s"),
         "ts":             time.time(),
     }
 

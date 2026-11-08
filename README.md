@@ -213,9 +213,13 @@ The four containers that start together:
 | `mosquitto` | 1883 | MQTT broker (authenticated) |
 | `timescaledb` | 5432 (internal) | Time-series database |
 
+### Security posture — trusted LAN only
+
+> ⚠️ **AEGIS ships wide open by design.** Authentication is **disabled by default**, and the Settings page (below) lets anyone who can reach the dashboard change system config — including setting secrets like the Pushover token — with no login. This is intentional for an isolated, trusted LAN deployment. **Do not expose any AEGIS port to the internet.** If the server must be reachable remotely, put it behind a VPN (there's a WireGuard helper) and enable the API key below. There is no user management, role separation, or audit log.
+
 ### API authentication
 
-All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default** (safe for trusted LAN deployments). To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
+All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default**. To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
 
 ```env
 AEGIS_API_KEY=your-secret-key-here
@@ -404,7 +408,7 @@ AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a f
 | **Threats** | Full-width panel with animated 0–100 score gauges, 8-factor breakdown bars, MLAT position detail, spoof confidence meter, and an "RF / No RID" strip. Live drones show solid; stale ones (>2 min) are dimmed. |
 | **Packet Feed** | Detection stream pre-seeded with the last 150 detections on load, then live via WebSocket. Includes SDR-classified RF links with RID / no-RID tags. |
 | **Flights** | Historical sorties — detections grouped into flights (new flight after a >5 min gap). Filterable flight list; the selected flight shows its path, operator location, detecting nodes, altitude/speed profile, a time-scrub replay, and GPX/KML/CSV export. No-RID / RF-only contacts are listed separately. |
-| **System** | Live status cards for every node and the server (CPU/mem/disk, temp, uptime, GPS sats, DB/MQTT) plus historical charts (1h–7d range, ~7-day retention) with warning bands. |
+| **System** | Live status cards for every node and the server (CPU/mem/disk, temp, uptime, GPS sats, DB/MQTT) plus historical charts (1h–7d range, ~7-day retention) with warning bands. A **Settings** sub-tab edits notification and live-map config live (no redeploy, no auth) and shows the rest read-only. |
 
 ### Sidebar
 
@@ -505,6 +509,13 @@ GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
 ```
 GET  /api/notify/status                 Pushover config state (no secrets)
 POST /api/notify/test                   Fire a sample push to verify setup
+```
+
+### Settings
+
+```
+GET  /api/settings                      Editable + read-only config (secrets masked)
+PUT  /api/settings                       Apply {key: value} for editable keys — live, no restart
 ```
 
 ### Alert categories

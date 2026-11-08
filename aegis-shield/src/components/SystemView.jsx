@@ -3,6 +3,7 @@
 // every node and the server, on one page. Future home for GUI settings.
 import { useEffect, useRef, useState } from 'react'
 import { colors } from '../theme/colors'
+import SettingsPanel from './SettingsPanel'
 
 const SERVER_ID = '__server__'
 const RANGES = ['1h', '6h', '24h', '7d']
@@ -107,6 +108,7 @@ function LineChart({ metric, series, width = 520, height = 150 }) {
 }
 
 export default function SystemView() {
+  const [tab, setTab] = useState('health')
   const [range, setRange] = useState('24h')
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
@@ -153,14 +155,22 @@ export default function SystemView() {
       <style>{css}</style>
 
       <div className="sv-head">
-        <div className="sv-title">System Health</div>
-        <div className="sv-ranges">
-          {RANGES.map(r => (
-            <button key={r} className={`sv-range ${range === r ? 'active' : ''}`} onClick={() => setRange(r)}>{r}</button>
-          ))}
+        <div className="sv-tabs">
+          <button className={`sv-tab ${tab === 'health' ? 'active' : ''}`} onClick={() => setTab('health')}>System Health</button>
+          <button className={`sv-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>Settings</button>
         </div>
+        {tab === 'health' && (
+          <div className="sv-ranges">
+            {RANGES.map(r => (
+              <button key={r} className={`sv-range ${range === r ? 'active' : ''}`} onClick={() => setRange(r)}>{r}</button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {tab === 'settings' && <SettingsPanel />}
+
+      {tab === 'health' && (<>
       {err && <div className="sv-err">Couldn’t load health history: {err}</div>}
 
       {/* Current status cards */}
@@ -218,6 +228,7 @@ export default function SystemView() {
       </div>
 
       <div className="sv-note">History retained ~7 days · refreshes every 15s · dashed line = warning threshold</div>
+      </>)}
     </div>
   )
 }
@@ -252,6 +263,11 @@ const css = `
 .sv-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 .sv-title { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:20px;
   text-transform:uppercase; letter-spacing:0.04em; color:var(--text); }
+.sv-tabs { display:flex; gap:4px; }
+.sv-tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted);
+  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:19px; text-transform:uppercase;
+  letter-spacing:0.04em; padding:0 6px 2px; cursor:pointer; }
+.sv-tab.active { color:var(--text); border-bottom-color:var(--steel-blue); }
 .sv-ranges { display:flex; gap:4px; }
 .sv-range { background:var(--bg1); border:1px solid var(--bg-border); color:var(--muted);
   font-family:'Share Tech Mono',monospace; font-size:11px; padding:3px 10px; border-radius:3px; cursor:pointer; }

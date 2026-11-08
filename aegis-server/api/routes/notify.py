@@ -7,7 +7,7 @@ without waiting for a live alert.
 
 from fastapi import APIRouter
 
-from core.config import get_settings
+from core import runtime_settings as rt
 from mqtt.notifier import notifier
 
 router = APIRouter()
@@ -15,15 +15,14 @@ router = APIRouter()
 
 @router.get("/status")
 async def notify_status():
-    s = get_settings()
     return {
-        "enabled":    s.pushover_enabled,
-        "configured": bool(s.pushover_token and s.pushover_user),
-        "min_level":  s.pushover_min_level,
-        "emergency_categories": sorted(s.pushover_emergency_set),
-        "health_enabled": s.pushover_health_enabled,
-        "cooldown_s": s.pushover_cooldown_s,
-        "max_per_hour": s.pushover_max_per_hour,
+        "enabled":    rt.get("pushover_enabled"),
+        "configured": bool(rt.get("pushover_token") and rt.get("pushover_user")),
+        "min_level":  rt.get("pushover_min_level"),
+        "emergency_categories": sorted(rt.emergency_set()),
+        "health_enabled": rt.get("pushover_health_enabled"),
+        "cooldown_s": rt.get("pushover_cooldown_s"),
+        "max_per_hour": rt.get("pushover_max_per_hour"),
     }
 
 

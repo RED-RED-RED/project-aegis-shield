@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detections, nodes, alerts, websocket, analysis, rf, system, flights, notify
+from api.routes import detections, nodes, alerts, websocket, analysis, rf, system, flights, notify, settings as settings_route
 from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
@@ -52,6 +52,10 @@ async def lifespan(app: FastAPI):
     # Initialize TimescaleDB schema
     await init_db()
     log.info("Database ready.")
+
+    # Load runtime setting overrides (GUI-editable config) from the DB
+    from core.runtime_settings import load_overrides
+    await load_overrides()
 
     # Start MQTT subscriber as a background task
     mqtt = MQTTSubscriber(settings)
@@ -106,6 +110,7 @@ app.include_router(rf.router,             prefix="/api/rf",            tags=["rf
 app.include_router(system.router,         prefix="/api/system",        tags=["system"],        dependencies=_auth)
 app.include_router(flights.router,        prefix="/api/flights",       tags=["flights"],       dependencies=_auth)
 app.include_router(notify.router,         prefix="/api/notify",        tags=["notify"],        dependencies=_auth)
+app.include_router(settings_route.router,  prefix="/api/settings",      tags=["settings"],      dependencies=_auth)
 
 # WebSocket — protected by same API key
 app.include_router(websocket.router, tags=["websocket"], dependencies=_auth)

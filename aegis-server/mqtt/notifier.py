@@ -24,7 +24,7 @@ import time
 
 import httpx
 
-from core.config import Settings, get_settings
+from core import runtime_settings as rt
 
 log = logging.getLogger("notifier")
 
@@ -33,11 +33,20 @@ _LEVEL_RANK = {"low": 0, "medium": 1, "high": 2}
 
 
 class PushoverNotifier:
-    def __init__(self, settings: Settings):
-        self.s = settings
+    def __init__(self, settings=None):
+        # The module singleton reads settings live from runtime_settings so GUI
+        # edits apply without a restart. Tests may inject a fixed Settings.
+        self._settings = settings
         # key -> (last_sent_monotonic, last_level_rank)
         self._cooldown: dict[str, tuple[float, int]] = {}
         self._sent_times: list[float] = []   # monotonic timestamps, last hour
+
+    def _g(self, key: str):
+        if key == "pushover_emergency_set":
+            return self._settings.pushover_emergency_set if self._settings is not None else rt.emergency_set()
+        if self._settings is not None:
+            return getattr(self._settings, key)
+        return rt.get(key)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -47,9 +56,9 @@ class PushoverNotifier:
             return False
         category = alert.get("category", "")
         level = (alert.get("level") or "low").lower()
-        emergency = category in self.s.pushover_emergency_set
+        emergency = category in self._g("pushover_emergency_set")
 
-        if not emergency and _LEVEL_RANK.get(level, 0) < _LEVEL_RANK.get(self.s.pushover_min_level, 1):
+        if not emergency and _LEVEL_RANK.get(level, 0) < _LEVEL_RANK.get(self._g("pushover_min_level"), 1):
             return False
 
         key = f"drone:{alert.get('drone_id')}" if alert.get("drone_id") else f"cat:{category}:{alert.get('node_id')}"
@@ -63,7 +72,7 @@ class PushoverNotifier:
 
     async def notify_health(self, node_id: str, kind: str, detail: str) -> bool:
         """Push a critical node-health event (temp/disk). Cooldown-gated per node+kind."""
-        if not self._ready() or not self.s.pushover_health_enabled:
+        if not self._ready() or not self._g("pushover_health_enabled"):
             return False
         key = f"health:{kind}:{node_id}"
         if not self._cooldown_ok(key, _LEVEL_RANK["high"]):
@@ -77,17 +86,17 @@ class PushoverNotifier:
         out = []
         temp = system.get("temp_c")
         disk = system.get("disk_pct")
-        if temp is not None and temp >= self.s.pushover_temp_crit_c:
-            out.append(("temp", f"CPU temperature {temp:.0f}°C (>= {self.s.pushover_temp_crit_c:.0f}°C) on {node_id}"))
-        if disk is not None and disk >= self.s.pushover_disk_crit_pct:
-            out.append(("disk", f"Disk usage {disk:.0f}% (>= {self.s.pushover_disk_crit_pct:.0f}%) on {node_id}"))
+        if temp is not None and temp >= self._g("pushover_temp_crit_c"):
+            out.append(("temp", f"CPU temperature {temp:.0f}°C (>= {self._g("pushover_temp_crit_c"):.0f}°C) on {node_id}"))
+        if disk is not None and disk >= self._g("pushover_disk_crit_pct"):
+            out.append(("disk", f"Disk usage {disk:.0f}% (>= {self._g("pushover_disk_crit_pct"):.0f}%) on {node_id}"))
         return out
 
     async def send_test(self) -> dict:
         """Fire a sample push to verify configuration."""
-        if not self.s.pushover_enabled:
+        if not self._g("pushover_enabled"):
             return {"sent": False, "detail": "notifications disabled (pushover_enabled=false)"}
-        if not (self.s.pushover_token and self.s.pushover_user):
+        if not (self._g("pushover_token") and self._g("pushover_user")):
             return {"sent": False, "detail": "missing PUSHOVER_TOKEN or PUSHOVER_USER"}
         ok = await self._send("AEGIS test", "Pushover is configured correctly.", priority=0, count=False)
         return {"sent": ok, "detail": "test push sent" if ok else "Pushover API call failed — check token/user"}
@@ -95,7 +104,7 @@ class PushoverNotifier:
     # ── internals ─────────────────────────────────────────────────────────────
 
     def _ready(self) -> bool:
-        return bool(self.s.pushover_enabled and self.s.pushover_token and self.s.pushover_user)
+        return bool(self._g("pushover_enabled") and self._g("pushover_token") and self._g("pushover_user"))
 
     def _cooldown_ok(self, key: str, level_rank: int) -> bool:
         """True if allowed now: outside the cooldown window, OR an escalation to a
@@ -104,7 +113,7 @@ class PushoverNotifier:
         prev = self._cooldown.get(key)
         if prev is not None:
             last_t, last_rank = prev
-            if (now - last_t) < self.s.pushover_cooldown_s and level_rank <= last_rank:
+            if (now - last_t) < self._g("pushover_cooldown_s") and level_rank <= last_rank:
                 return False
         self._cooldown[key] = (now, level_rank)
         return True
@@ -112,7 +121,7 @@ class PushoverNotifier:
     def _rate_ok(self) -> bool:
         now = time.monotonic()
         self._sent_times = [t for t in self._sent_times if now - t < 3600]
-        if len(self._sent_times) >= self.s.pushover_max_per_hour:
+        if len(self._sent_times) >= self._g("pushover_max_per_hour"):
             return False
         self._sent_times.append(now)
         return True
@@ -135,15 +144,15 @@ class PushoverNotifier:
             log.warning("Pushover hourly cap reached — dropping notification")
             return False
         data = {
-            "token": self.s.pushover_token,
-            "user": self.s.pushover_user,
+            "token": self._g("pushover_token"),
+            "user": self._g("pushover_user"),
             "title": title[:250],
             "message": message[:1024],
             "priority": priority,
         }
         if priority == 2:
-            data["retry"] = max(30, self.s.pushover_emergency_retry_s)
-            data["expire"] = min(10800, self.s.pushover_emergency_expire_s)
+            data["retry"] = max(30, self._g("pushover_emergency_retry_s"))
+            data["expire"] = min(10800, self._g("pushover_emergency_expire_s"))
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.post(_PUSHOVER_URL, data=data)
@@ -157,4 +166,4 @@ class PushoverNotifier:
 
 
 # Module singleton — zero overhead when disabled.
-notifier = PushoverNotifier(get_settings())
+notifier = PushoverNotifier()

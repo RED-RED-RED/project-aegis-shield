@@ -328,6 +328,15 @@ async def _create_schema(pool: Pool):
                 ON rf_contacts (last_seen DESC);
         """)
 
+        # ---- settings (runtime overrides for .env, editable from the GUI) ----
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key        TEXT PRIMARY KEY,
+                value      TEXT,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+        """)
+
         # ---- node_health time-series (health history for the System tab) ----
         # One row per heartbeat per node, plus periodic rows for the server
         # itself (node_id = '__server__'). temp_c/satellites/gps_fix are node-
