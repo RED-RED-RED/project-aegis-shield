@@ -1,0 +1,82 @@
+name: CI
+
+# Runs the full test suites and the dashboard build on every push and PR.
+# Tests only — this never deploys. Deployment stays manual (scripts/update.sh).
+on:
+  push:
+  pull_request:
+
+jobs:
+  server-tests:
+    name: Server tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aegis-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: aegis-server/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+  node-tests:
+    name: ARGUS node tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: argus-node
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: argus-node/requirements.txt
+      # RTL-SDR system library, so pyrtlsdr imports and the SDR env tests run
+      # (rather than skip) — this also exercises the deployment path.
+      - name: Install librtlsdr
+        run: sudo apt-get update && sudo apt-get install -y librtlsdr-dev
+      - name: Create venv and install deps
+        run: |
+          python -m venv venv
+          ./venv/bin/pip install -r requirements.txt pytest pytest-asyncio
+      # Same pyrtlsdr compatibility patch the nodes apply on deploy.
+      - name: Apply pyrtlsdr patch
+        run: bash ../scripts/patch-pyrtlsdr.sh "$PWD/venv"
+      - run: ./venv/bin/python -m pytest -q
+
+  calibration-tests:
+    name: Calibration tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: calibration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: calibration/requirements.txt
+      - run: pip install -r requirements.txt pytest
+      - run: pytest -q
+
+  ui-build:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aegis-shield
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: aegis-shield/package-lock.json
+      - run: npm ci
+      - run: npm run build

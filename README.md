@@ -1,5 +1,7 @@
 # AEGIS Platform
 
+[![CI](https://github.com/RED-RED-RED/project-aegis-shield/actions/workflows/ci.yml/badge.svg)](https://github.com/RED-RED-RED/project-aegis-shield/actions/workflows/ci.yml)
+
 > **A**irspace **E**nforcement and **G**round **I**ntelligence **S**ystem  
 > Multi-node Remote ID detection, threat scoring, and MLAT position estimation
 
@@ -618,6 +620,8 @@ The R820T tuner cannot tune above ~1,766 MHz. If you have modified `SWEEP_FREQS`
 ```bash
 # Run all 311 tests
 make test
+# GitHub Actions runs every suite + the dashboard build on each push
+# (.github/workflows/ci.yml). It tests only — it never deploys.
 
 # Individual suites
 make test-node     # 200 tests — RID parser, GPS, Wi-Fi NAN, Bluetooth HCI, SDR classifier (scapy required for Wi-Fi NAN)
