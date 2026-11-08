@@ -215,7 +215,7 @@ The four containers that start together:
 
 ### Security posture — trusted LAN only
 
-> ⚠️ **AEGIS ships wide open by design.** Authentication is **disabled by default**, and the Settings page (below) lets anyone who can reach the dashboard change system config — including setting secrets like the Pushover token — with no login. This is intentional for an isolated, trusted LAN deployment. **Do not expose any AEGIS port to the internet.** If the server must be reachable remotely, put it behind a VPN (there's a WireGuard helper) and enable the API key below. There is no user management, role separation, or audit log.
+> ⚠️ **AEGIS ships wide open by design.** Authentication is **disabled by default**, and the Settings page (below) lets anyone who can reach the dashboard change system config — including setting secrets like the Pushover token — with no login. Secrets set from the GUI are stored in the database (the `settings` table) in plaintext, which is acceptable only because the database is internal to the trusted deployment. **Do not expose any AEGIS port to the internet.** If the server must be reachable remotely, put it behind a VPN (there's a WireGuard helper) and enable the API key below. There is no user management, role separation, or audit log.
 
 ### API authentication
 

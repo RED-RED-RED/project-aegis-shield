@@ -17,7 +17,6 @@ Alert deduplication:
   alert was generated within alert_dedup_window_s seconds.
 """
 
-import asyncio
 import logging
 import time
 from collections import defaultdict
@@ -265,5 +264,5 @@ class AlertEngine:
 
         # Fire-and-forget outbound notification (Pushover). Never blocks the
         # alert pipeline; the notifier gates by level/cooldown and swallows
-        # its own errors.
-        asyncio.create_task(notifier.notify_alert(dict(row)))
+        # its own errors. fire() keeps a task reference so it isn't GC'd.
+        notifier.fire(notifier.notify_alert(dict(row)))

@@ -1,5 +1,6 @@
 """Pushover notifier logic — gating, cooldown, emergency, rate cap, health."""
 
+import asyncio
 from unittest.mock import AsyncMock
 
 from core.config import Settings
@@ -126,3 +127,17 @@ async def test_send_test_disabled():
     n = PushoverNotifier(mk(pushover_enabled=False))
     out = await n.send_test()
     assert out["sent"] is False
+
+
+def test_is_active():
+    assert notif().is_active() is True
+    assert notif(pushover_enabled=False).is_active() is False
+
+
+async def test_fire_runs_and_cleans_up():
+    n = notif()
+    n.fire(n.notify_alert(alert()))
+    assert len(n._tasks) == 1          # reference held while in flight
+    await asyncio.sleep(0.01)
+    n._send.assert_awaited()           # the scheduled coro actually ran
+    assert len(n._tasks) == 0          # done-callback discarded it

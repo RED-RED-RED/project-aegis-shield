@@ -51,6 +51,8 @@ async def list_flights(
     min_threat: float | None = Query(None),
     limit: int = Query(200, le=1000),
 ):
+    # `window` is a fixed string from _RANGES (never raw user input), so it is
+    # safe to inline; the query param only selects which constant to use.
     window = _RANGES.get(range, _RANGES["24h"])
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -126,7 +128,9 @@ async def rf_contact_history(range: str = Query("24h"), dark_only: bool = Query(
                 ORDER BY last_seen DESC
                 LIMIT 500
             """, dark_only)
-        except Exception:
+        except Exception as e:
+            # rf_contacts may not exist yet on a fresh DB; degrade to empty.
+            log.debug(f"rf-contacts history query failed: {e}")
             rows = []
     def ser(r):
         d = dict(r)

@@ -19,6 +19,7 @@ Behaviour (configurable in core/config.py):
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 
@@ -40,6 +41,18 @@ class PushoverNotifier:
         # key -> (last_sent_monotonic, last_level_rank)
         self._cooldown: dict[str, tuple[float, int]] = {}
         self._sent_times: list[float] = []   # monotonic timestamps, last hour
+        self._tasks: set = set()             # keep refs to in-flight sends
+
+    def is_active(self) -> bool:
+        """Notifications configured + enabled — cheap gate for callers."""
+        return self._ready()
+
+    def fire(self, coro) -> None:
+        """Schedule a notify coroutine fire-and-forget, keeping a reference so
+        the task isn't garbage-collected mid-flight. Never blocks the caller."""
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     def _g(self, key: str):
         if key == "pushover_emergency_set":
@@ -86,10 +99,12 @@ class PushoverNotifier:
         out = []
         temp = system.get("temp_c")
         disk = system.get("disk_pct")
-        if temp is not None and temp >= self._g("pushover_temp_crit_c"):
-            out.append(("temp", f"CPU temperature {temp:.0f}°C (>= {self._g("pushover_temp_crit_c"):.0f}°C) on {node_id}"))
-        if disk is not None and disk >= self._g("pushover_disk_crit_pct"):
-            out.append(("disk", f"Disk usage {disk:.0f}% (>= {self._g("pushover_disk_crit_pct"):.0f}%) on {node_id}"))
+        temp_crit = self._g("pushover_temp_crit_c")
+        disk_crit = self._g("pushover_disk_crit_pct")
+        if temp is not None and temp >= temp_crit:
+            out.append(("temp", f"CPU temperature {temp:.0f}°C (>= {temp_crit:.0f}°C) on {node_id}"))
+        if disk is not None and disk >= disk_crit:
+            out.append(("disk", f"Disk usage {disk:.0f}% (>= {disk_crit:.0f}%) on {node_id}"))
         return out
 
     async def send_test(self) -> dict:
@@ -110,10 +125,14 @@ class PushoverNotifier:
         """True if allowed now: outside the cooldown window, OR an escalation to a
         strictly higher level than the last push for this key."""
         now = time.monotonic()
+        cd = self._g("pushover_cooldown_s")
+        # Bound memory: drop entries that are well past their cooldown window.
+        if len(self._cooldown) > 256:
+            self._cooldown = {k: v for k, v in self._cooldown.items() if (now - v[0]) < cd}
         prev = self._cooldown.get(key)
         if prev is not None:
             last_t, last_rank = prev
-            if (now - last_t) < self._g("pushover_cooldown_s") and level_rank <= last_rank:
+            if (now - last_t) < cd and level_rank <= last_rank:
                 return False
         self._cooldown[key] = (now, level_rank)
         return True

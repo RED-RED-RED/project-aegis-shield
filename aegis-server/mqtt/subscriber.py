@@ -342,9 +342,11 @@ class MQTTSubscriber:
         # Fire GPS jamming alert if needed
         await self.alert_engine.evaluate_heartbeat(hb)
 
-        # Critical node-health pushes (temp/disk) — fire-and-forget.
-        for kind, detail in notifier.maybe_health_from_heartbeat(hb.node_id, hb.system):
-            asyncio.create_task(notifier.notify_health(hb.node_id, kind, detail))
+        # Critical node-health pushes (temp/disk) — fire-and-forget, only when
+        # notifications are actually configured/enabled.
+        if notifier.is_active():
+            for kind, detail in notifier.maybe_health_from_heartbeat(hb.node_id, hb.system):
+                notifier.fire(notifier.notify_health(hb.node_id, kind, detail))
 
         await self.broadcaster.broadcast_node_update(hb.node_id, "online", payload)
 

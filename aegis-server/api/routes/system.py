@@ -54,6 +54,8 @@ def _rows_to_current(rows) -> dict:
 
 @router.get("/health/history")
 async def health_history(range: str = Query("24h")):
+    # window (str) and bucket_s (int) come from _RANGES — server-controlled
+    # constants, never raw user input — so they are safe to inline.
     window, bucket_s = _RANGES.get(range, _RANGES["24h"])
     pool = await get_pool()
     async with pool.acquire() as conn:

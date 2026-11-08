@@ -81,6 +81,7 @@ async def _build_live_state() -> dict:
     async with pool.acquire() as conn:
         # Drones seen within the live window (older ones live only in history).
         # age_s lets the UI dim a contact once it passes live_active_s.
+        # live_window_s is an int-coerced setting (runtime_settings), safe to inline.
         drone_rows = await conn.fetch(f"""
             SELECT drone_id, first_seen, last_seen,
                    last_node_id, last_transport, last_rssi,
