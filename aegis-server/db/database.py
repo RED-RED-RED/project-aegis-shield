@@ -279,6 +279,31 @@ async def _create_schema(pool: Pool):
             );
         """)
 
+        # ---- Drone registry (operator annotations: category + notes) ----
+        # One row per drone_id, independent of detection retention so analyst
+        # annotations are never pruned. category drives alert behavior
+        # (see core/drone_registry.py + mqtt/notifier.py).
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS drone_registry (
+                drone_id    TEXT PRIMARY KEY,
+                category    TEXT NOT NULL DEFAULT 'unknown',
+                label       TEXT,
+                updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS drone_notes (
+                id          BIGSERIAL PRIMARY KEY,
+                drone_id    TEXT NOT NULL,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                body        TEXT NOT NULL
+            );
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_drone_notes_drone_id
+            ON drone_notes (drone_id, created_at DESC);
+        """)
+
         # ---- alerts table ----
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (

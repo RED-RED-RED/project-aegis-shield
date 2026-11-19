@@ -22,7 +22,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detections, nodes, alerts, websocket, analysis, rf, system, flights, notify, settings as settings_route
+from api.routes import detections, nodes, alerts, websocket, analysis, rf, system, flights, notify, registry, settings as settings_route
 from banner import BANNER
 from core.auth import require_api_key
 from core.config import get_settings
@@ -60,6 +60,10 @@ async def lifespan(app: FastAPI):
     # Seed + load the Remote ID make/model reference (CTA-2063-A identity)
     from analysis import rid_identity
     await rid_identity.seed_if_empty()
+
+    # Load drone-registry category annotations (drive alert suppress/escalate)
+    from core import drone_registry
+    await drone_registry.load_cache()
 
     # Start MQTT subscriber as a background task
     mqtt = MQTTSubscriber(settings)
@@ -114,6 +118,7 @@ app.include_router(rf.router,             prefix="/api/rf",            tags=["rf
 app.include_router(system.router,         prefix="/api/system",        tags=["system"],        dependencies=_auth)
 app.include_router(flights.router,        prefix="/api/flights",       tags=["flights"],       dependencies=_auth)
 app.include_router(notify.router,         prefix="/api/notify",        tags=["notify"],        dependencies=_auth)
+app.include_router(registry.router,       prefix="/api/registry",      tags=["registry"],      dependencies=_auth)
 app.include_router(settings_route.router,  prefix="/api/settings",      tags=["settings"],      dependencies=_auth)
 
 # WebSocket — protected by same API key

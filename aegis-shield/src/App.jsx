@@ -9,6 +9,7 @@ import PacketFeed  from './components/PacketFeed'
 import ThreatPanel from './components/ThreatPanel'
 import SystemView  from './components/SystemView'
 import FlightHistory from './components/FlightHistory'
+import Registry    from './components/Registry'
 
 const css = `
 .app-shell {
@@ -41,8 +42,9 @@ export default function App() {
 
   useEffect(() => { connect() }, [connect])
 
-  // Threats, System and Flights take full width — hide right panel
-  const fullMain = activePanel === 'threats' || activePanel === 'system' || activePanel === 'flights'
+  // Threats, System, Flights and Registry take full width — hide right panel
+  const fullMain = activePanel === 'threats' || activePanel === 'system' ||
+                   activePanel === 'flights' || activePanel === 'registry'
 
   return (
     <>
@@ -56,6 +58,7 @@ export default function App() {
           {activePanel === 'packets' && <PacketFeed />}
           {activePanel === 'system'  && <SystemView />}
           {activePanel === 'flights' && <FlightHistory />}
+          {activePanel === 'registry' && <Registry />}
         </main>
         {!fullMain && <RightPanel />}
       </div>

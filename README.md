@@ -43,6 +43,7 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
   - [Remote access — Tailscale](#remote-access--tailscale-recommended)
   - [WireGuard VPN](#wireguard-vpn-alternative)
   - [Drone make/model reference](#drone-makemodel-reference)
+  - [Drone registry](#drone-registry)
 - [Calibration](#calibration)
 - [AEGIS Shield](#aegis-shield)
 - [API Reference](#api-reference)
@@ -415,6 +416,20 @@ bash scripts/update-doc-list.sh --file prefixes.csv     # import a CSV (serial_p
 ```
 
 The reference table lives in the database (covered by PBS backups) and persists across container rebuilds. The scrape needs outbound HTTPS from the server; an air-gapped box uses the seed plus a `--file` CSV import. A monthly cron/systemd timer is a reasonable cadence since the list changes slowly.
+
+### Drone registry
+
+The **Registry** tab lists every drone ever seen with its make/model, and lets you tag each one with a category and a timestamped notes log. Annotations live in their own table (`drone_registry` / `drone_notes`), independent of detection retention, so they are never pruned.
+
+Categories are a fixed ladder, and the category drives alert behavior:
+
+| Category | Alert behavior |
+|---|---|
+| Authorized | suppress routine pushes (your own / approved drones — cuts noise) |
+| Unknown (default), Known-benign, Nuisance, Prior incident | normal |
+| Watchlist, Hostile | escalate — a loud emergency push on any alert, overriding the level gate and cooldown |
+
+So you can silence your own fleet and make a flagged airframe buzz every time it shows up. The category labels are display strings over stable keys, so renaming one (e.g. "Hostile") is a one-line change with no migration.
 
 ---
 

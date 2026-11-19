@@ -196,6 +196,7 @@ export default function Sidebar() {
             { id: 'threats', icon: '◉', label: 'Threats' },
             { id: 'packets', icon: '≋', label: 'Packet Feed' },
             { id: 'flights', icon: '✈', label: 'Flights' },
+            { id: 'registry', icon: '▦', label: 'Registry' },
             { id: 'system',  icon: '⚙', label: 'System' },
           ].map(item => (
             <div

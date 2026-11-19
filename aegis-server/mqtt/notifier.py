@@ -64,18 +64,29 @@ class PushoverNotifier:
     # ── public API ────────────────────────────────────────────────────────────
 
     async def notify_alert(self, alert: dict) -> bool:
-        """Push a drone/alert if it clears the level gate and cooldown."""
+        """Push a drone/alert if it clears the level gate and cooldown.
+
+        The drone's registry category can override this: an Authorized drone is
+        suppressed (no push), and a Watchlist/Hostile drone is escalated to a
+        loud emergency push regardless of alert level."""
         if not self._ready():
             return False
+        from core import drone_registry
+        behavior = drone_registry.behavior_for(alert.get("drone_id"))
+        if behavior == "suppress":
+            return False
+
         category = alert.get("category", "")
         level = (alert.get("level") or "low").lower()
-        emergency = category in self._g("pushover_emergency_set")
+        emergency = behavior == "escalate" or category in self._g("pushover_emergency_set")
 
         if not emergency and _LEVEL_RANK.get(level, 0) < _LEVEL_RANK.get(self._g("pushover_min_level"), 1):
             return False
 
+        # Escalated drones override the cooldown so a flagged contact always buzzes.
         key = f"drone:{alert.get('drone_id')}" if alert.get("drone_id") else f"cat:{category}:{alert.get('node_id')}"
-        if not self._cooldown_ok(key, _LEVEL_RANK.get(level, 0)):
+        rank = _LEVEL_RANK["high"] if emergency else _LEVEL_RANK.get(level, 0)
+        if not self._cooldown_ok(key, rank):
             return False
 
         priority = 2 if emergency else (1 if level == "high" else 0)
