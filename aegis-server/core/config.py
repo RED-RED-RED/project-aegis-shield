@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     # ---- Alert engine ----
     alert_no_rid_min_alt_m: float = 30.0       # Only alert if drone is above this AGL
     alert_speed_threshold_ms: float = 30.0     # Flag suspiciously fast drones
+    alert_operator_max_km: float = 5.0         # Flag operator position farther than this from the drone (possible spoof)
     alert_dedup_window_s: int = 60             # Don't re-alert for same drone within window
 
     # RF contacts (SDR-classified links)

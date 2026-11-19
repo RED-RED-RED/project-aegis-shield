@@ -90,27 +90,44 @@ function droneIcon(drone, imperial = false) {
   return L.divIcon({ html, className:'', iconSize:[12,28], iconAnchor:[6,22], popupAnchor:[0,-26] })
 }
 
+// Operator plausibility: flag a pilot position implausibly far from the drone.
+// Visual cue only; the server's operator_spoof alert (alert_operator_max_km) is
+// authoritative. Kept in sync with the server default.
+const OPERATOR_FAR_KM = 5
+function haversineKm(a, b) {
+  const toRad = d => d * Math.PI / 180
+  const dLat = toRad(b[0] - a[0]), dLon = toRad(b[1] - a[1])
+  const s = Math.sin(dLat/2) ** 2 + Math.cos(toRad(a[0])) * Math.cos(toRad(b[0])) * Math.sin(dLon/2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(s))
+}
+
 // ── Operator (pilot) marker ────────────────────────────────────────────────
 // The ground position the drone broadcasts for its operator. Distinct from the
-// drone marker: a steel-blue pin with a person glyph.
-function operatorIcon() {
-  const c = colors.steelBlueLight
+// drone marker: a steel-blue pin with a person glyph (red when implausibly far).
+function operatorIcon(far = false) {
+  const c = far ? colors.threatHigh : colors.steelBlueLight
   const html = `<div style="display:flex;flex-direction:column;align-items:center;">
     <div style="width:18px;height:18px;border-radius:50%;background:${colors.bgElevated};
       border:2px solid ${c};display:flex;align-items:center;justify-content:center;
-      box-shadow:0 0 6px ${c}80;font-size:11px;line-height:1;">👤</div>
+      box-shadow:0 0 6px ${c}80;font-size:11px;line-height:1;">${far ? '⚠' : '👤'}</div>
     <div style="width:2px;height:6px;background:${c};"></div>
   </div>`
   return L.divIcon({ html, className:'', iconSize:[18,24], iconAnchor:[9,24], popupAnchor:[0,-24] })
 }
 
-function operatorPopupHtml(drone, imperial = false) {
+function operatorPopupHtml(drone, imperial = false, distKm = null) {
+  const far = distKm != null && distKm > OPERATOR_FAR_KM
+  const dist = distKm == null ? '' :
+    `<div><span style="color:${colors.textMuted}">DIST  </span>` +
+    `<span style="color:${far ? colors.threatHigh : colors.textPrimary}">${fmtDist(distKm * 1000, imperial)}</span></div>`
+  const warn = far ? `<div style="color:${colors.threatHigh};margin-top:3px;">⚠ Implausibly far — possible spoof</div>` : ''
   return `<div style="font-family:var(--mono,monospace);font-size:11px;min-width:150px;">
-    <div style="font-weight:bold;letter-spacing:1px;color:${colors.steelBlueLight};text-transform:uppercase;">Operator</div>
+    <div style="font-weight:bold;letter-spacing:1px;color:${far ? colors.threatHigh : colors.steelBlueLight};text-transform:uppercase;">Operator</div>
     <div style="color:${colors.textMuted};margin-bottom:3px;">pilot / ground station</div>
     <div><span style="color:${colors.textMuted}">DRONE </span>${drone.drone_id}</div>
     <div><span style="color:${colors.textMuted}">OP ID </span>${drone.operator_id || '—'}</div>
     <div><span style="color:${colors.textMuted}">POS   </span>${drone.operator_lat.toFixed(5)}, ${drone.operator_lon.toFixed(5)}</div>
+    ${dist}${warn}
   </div>`
 }
 
@@ -328,27 +345,30 @@ export default function MapView() {
                     !(drone.operator_lat === 0 && drone.operator_lon === 0)
       if (hasOp) {
         const oll = [drone.operator_lat, drone.operator_lon]
+        const opKm = haversineKm(ll, oll)
+        const opFar = opKm > OPERATOR_FAR_KM
+        const tether = opFar ? colors.threatHigh : colors.steelBlueLight
         if (opMarkRef.current[id]) {
-          opMarkRef.current[id].setLatLng(oll)
+          opMarkRef.current[id].setLatLng(oll).setIcon(operatorIcon(opFar))
         } else {
-          opMarkRef.current[id] = L.marker(oll, { icon:operatorIcon(), zIndexOffset:8 })
-            .bindPopup(operatorPopupHtml(drone, imperial), { maxWidth:240 })
+          opMarkRef.current[id] = L.marker(oll, { icon:operatorIcon(opFar), zIndexOffset:8 })
+            .bindPopup(operatorPopupHtml(drone, imperial, opKm), { maxWidth:240 })
             .on('click', () => selectDrone(id))
             .addTo(map)
         }
         opMarkRef.current[id].setOpacity(op)
         if (opMarkRef.current[id].isPopupOpen()) {
-          opMarkRef.current[id].setPopupContent(operatorPopupHtml(drone, imperial))
+          opMarkRef.current[id].setPopupContent(operatorPopupHtml(drone, imperial, opKm))
         }
-        // Tether line drone -> operator
+        // Tether line drone -> operator (red when implausibly far)
         if (opLineRef.current[id]) {
-          opLineRef.current[id].setLatLngs([ll, oll])
+          opLineRef.current[id].setLatLngs([ll, oll]).setStyle({ color:tether })
         } else {
           opLineRef.current[id] = L.polyline([ll, oll], {
-            color:colors.steelBlueLight, weight:1, dashArray:'3 4', opacity:0.6
+            color:tether, weight:1, dashArray:'3 4', opacity:0.6
           }).addTo(map)
         }
-        opLineRef.current[id].setStyle({ opacity: stale ? 0.2 : 0.6 })
+        opLineRef.current[id].setStyle({ opacity: stale ? 0.2 : (opFar ? 0.8 : 0.6) })
       } else {
         for (const r of [opMarkRef, opLineRef]) {
           if (r.current[id]) { map.removeLayer(r.current[id]); delete r.current[id] }

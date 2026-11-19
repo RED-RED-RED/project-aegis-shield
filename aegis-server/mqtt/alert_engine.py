@@ -34,6 +34,15 @@ log = logging.getLogger("alerts")
 FAA_MAX_ALT_M = 121.92
 
 
+def _haversine_km(lat1, lon1, lat2, lon2) -> float:
+    """Great-circle distance in kilometres between two lat/lon points."""
+    from math import radians, sin, cos, asin, sqrt
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * 6371.0 * asin(sqrt(a))
+
+
 class AlertEngine:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -128,6 +137,35 @@ class AlertEngine:
                 "lat": drone.lat,
                 "lon": drone.lon,
             })
+
+        # ---- Rule 6: Operator position implausibly far (possible spoof) ----
+        # Remote ID broadcasts the operator's ground position; it should be
+        # within control range of the drone. A wildly distant or null operator
+        # position is a strong tamper/spoof signal.
+        op_lat, op_lon = drone.operator_lat, drone.operator_lon
+        if (op_lat is not None and op_lon is not None
+                and drone.lat is not None and drone.lon is not None):
+            max_km = self.settings.alert_operator_max_km
+            null_op = op_lat == 0.0 and op_lon == 0.0
+            drone_at_null = abs(drone.lat) < 1.0 and abs(drone.lon) < 1.0
+            dist_km = None if null_op else _haversine_km(drone.lat, drone.lon, op_lat, op_lon)
+            implausible = (null_op and not drone_at_null) or (dist_km is not None and dist_km > max_km)
+            if implausible:
+                where = "at 0,0 (null island)" if dist_km is None else f"{dist_km:.1f} km from the drone"
+                alerts.append({
+                    "level": "medium",
+                    "category": "operator_spoof",
+                    "title": f"Operator position implausible — {drone.id}",
+                    "description": (
+                        f"Broadcast operator position is {where}, beyond the "
+                        f"{max_km:.0f} km plausibility limit. Possible spoofed Remote ID "
+                        f"or tampered operator field."
+                    ),
+                    "drone_id": drone.id,
+                    "node_id": event.node_id,
+                    "lat": drone.lat,
+                    "lon": drone.lon,
+                })
 
         # ---- Rule 5: New drone first seen ----
         pool = await get_pool()

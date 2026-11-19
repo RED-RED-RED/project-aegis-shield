@@ -29,6 +29,7 @@ def make_event(
     alt_baro=50.0, height_agl=45.0,
     speed_h=5.0, status="airborne",
     node_id="ARGUS-01", transport="wifi_nan",
+    operator_lat=None, operator_lon=None,
 ):
     return DetectionEvent(
         node_id=node_id,
@@ -49,6 +50,8 @@ def make_event(
             speed_v=0.0,
             heading=127.0,
             operator_id=operator_id,
+            operator_lat=operator_lat,
+            operator_lon=operator_lon,
             description="",
         ),
         ts=time.time(),
@@ -134,6 +137,56 @@ class TestAlertEngineRules:
 
         assert any(a["category"] == "no_rid" for a in emitted)
         assert any(a["level"] == "high" for a in emitted)
+
+    @pytest.mark.asyncio
+    async def test_operator_far_triggers_spoof(self, settings):
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        # Operator ~82 km west of the drone — well beyond the 5 km limit.
+        event = make_event(operator_lat=42.36, operator_lon=-72.06)
+        emitted = []
+        engine._emit = lambda a: emitted.append(a) or asyncio.sleep(0)
+        with self._patch_pool(pool), patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate(event)
+        assert any(a["category"] == "operator_spoof" for a in emitted)
+
+    @pytest.mark.asyncio
+    async def test_operator_close_ok(self, settings):
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        # Operator ~150 m from the drone — fine.
+        event = make_event(operator_lat=42.361, operator_lon=-71.061)
+        emitted = []
+        engine._emit = lambda a: emitted.append(a) or asyncio.sleep(0)
+        with self._patch_pool(pool), patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate(event)
+        assert not any(a["category"] == "operator_spoof" for a in emitted)
+
+    @pytest.mark.asyncio
+    async def test_operator_null_island_triggers(self, settings):
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        event = make_event(operator_lat=0.0, operator_lon=0.0)
+        emitted = []
+        engine._emit = lambda a: emitted.append(a) or asyncio.sleep(0)
+        with self._patch_pool(pool), patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate(event)
+        assert any(a["category"] == "operator_spoof" for a in emitted)
+
+    @pytest.mark.asyncio
+    async def test_no_operator_no_spoof(self, settings):
+        engine = self._get_engine(settings)
+        pool, _ = build_mock_pool()
+        event = make_event()   # no operator position
+        emitted = []
+        engine._emit = lambda a: emitted.append(a) or asyncio.sleep(0)
+        with self._patch_pool(pool), patch("mqtt.ws_broadcaster._manager") as m:
+            m.count = 0
+            await engine.evaluate(event)
+        assert not any(a["category"] == "operator_spoof" for a in emitted)
 
     @pytest.mark.asyncio
     async def test_no_rid_suppressed_below_altitude(self, settings):

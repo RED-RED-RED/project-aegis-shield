@@ -575,6 +575,7 @@ GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
 | `speed` | MEDIUM | Horizontal speed exceeds configured threshold (default 30 m/s) |
 | `altitude` | MEDIUM | Above 400ft AGL without operator ID |
 | `spoofed_position` | HIGH | Drone reporting position at (0, 0) while airborne |
+| `operator_spoof` | MEDIUM | Broadcast operator position is farther than `alert_operator_max_km` (default 5 km) from the drone, or null (0, 0) — a tampered/spoofed operator field. The map draws the pilot tether in red. |
 | `new_drone` | LOW | First detection of a drone ID in the database |
 | `threat_score` | HIGH | Threat score crosses into ≥ 70 band |
 | `position_mismatch` | HIGH | MLAT estimate diverges > 250m from broadcast with spoof confidence > 60% |
