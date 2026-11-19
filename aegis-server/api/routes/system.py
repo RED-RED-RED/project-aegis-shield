@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Body, Query
 
 from db.database import get_pool
+from analysis import rid_identity
+from core.runtime_settings import get as rt_get
 
 log = logging.getLogger("system-route")
 router = APIRouter()
@@ -87,3 +89,56 @@ async def health_history(range: str = Query("24h")):
         "series":    _rows_to_series(rows),
         "current":   _rows_to_current(cur_rows),
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Remote ID make/model reference table (CTA-2063-A identity)
+# ──────────────────────────────────────────────────────────────────────────
+
+@router.get("/rid-identity")
+async def rid_identity_status():
+    """Current state of the make/model reference table for the System panel."""
+    status = await rid_identity.get_status()
+    status["source_url"] = rt_get("rid_doc_source_url") or ""
+    return status
+
+
+@router.post("/rid-identity/refresh")
+async def rid_identity_refresh(payload: dict = Body(default=None)):
+    """
+    Manually refresh the make/model reference from the FAA Declaration of
+    Compliance list. Uses the URL in the request body if given, else the
+    `rid_doc_source_url` setting. No auth by design (trusted LAN).
+    """
+    url = (payload or {}).get("url") or rt_get("rid_doc_source_url")
+    if not url:
+        return {
+            "ok": False,
+            "error": "No source URL configured. Set 'rid_doc_source_url' in "
+                     "Settings or pass a url, then try again.",
+        }
+    try:
+        count = await rid_identity.refresh_from_url(url)
+    except Exception as e:
+        log.warning("RID identity refresh failed: %s", e)
+        return {"ok": False, "error": f"Refresh failed: {e}"}
+    status = await rid_identity.get_status()
+    status["ok"] = True
+    return status
+
+
+@router.post("/rid-identity/import")
+async def rid_identity_import(payload: dict = Body(...)):
+    """Import make/model entries from pasted CSV text (manual / air-gapped path)."""
+    text = (payload or {}).get("csv")
+    if not text or not text.strip():
+        return {"ok": False, "error": "No CSV content provided."}
+    try:
+        count = await rid_identity.import_csv_text(text, source="import")
+    except Exception as e:
+        log.warning("RID identity import failed: %s", e)
+        return {"ok": False, "error": f"Import failed: {e}"}
+    status = await rid_identity.get_status()
+    status["ok"] = True
+    status["imported"] = count
+    return status

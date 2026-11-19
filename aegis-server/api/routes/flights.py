@@ -37,7 +37,8 @@ async def _threat_map(conn, drone_ids: set[str]) -> dict:
     if not drone_ids:
         return {}
     rows = await conn.fetch("""
-        SELECT drone_id, has_valid_rid, threat_score, threat_level
+        SELECT drone_id, has_valid_rid, threat_score, threat_level,
+               make, model, id_source
         FROM drone_tracks WHERE drone_id = ANY($1::text[])
     """, list(drone_ids))
     return {r["drone_id"]: dict(r) for r in rows}

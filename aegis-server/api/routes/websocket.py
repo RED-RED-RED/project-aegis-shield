@@ -90,6 +90,7 @@ async def _build_live_state() -> dict:
                    id_type, ua_type, operator_id,
                    operator_lat, operator_lon, description,
                    has_valid_rid, detection_count, detecting_nodes,
+                   make, model, mfr_code, id_source,
                    EXTRACT(EPOCH FROM (NOW() - last_seen))::int AS age_s
             FROM drone_tracks
             WHERE last_seen > NOW() - INTERVAL '{rt.get("live_window_s")} seconds'

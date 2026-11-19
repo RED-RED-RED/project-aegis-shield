@@ -234,6 +234,11 @@ async def _create_schema(pool: Pool):
             ("spoof_confidence",    "REAL"),
             ("mlat_node_count",     "INT"),
             ("analysis_updated_at", "TIMESTAMPTZ"),
+            # Remote ID identity (decoded from the CTA-2063-A serial at ingest)
+            ("make",                "TEXT"),
+            ("model",               "TEXT"),
+            ("mfr_code",            "TEXT"),
+            ("id_source",           "TEXT"),
         ]:
             try:
                 await conn.execute(
@@ -246,6 +251,32 @@ async def _create_schema(pool: Pool):
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_drone_tracks_last_seen
             ON drone_tracks (last_seen DESC);
+        """)
+
+        # ---- Remote ID identity reference (make/model by CTA-2063-A code) ----
+        # Small table, keyed by the 4-char manufacturer code. Seeded on first
+        # boot from data/rid_identity_seed.json and grown via the System refresh
+        # (FAA Declaration of Compliance list) or a CSV import.
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rid_identity (
+                id             BIGSERIAL PRIMARY KEY,
+                mfr_code       TEXT,
+                manufacturer   TEXT,
+                model          TEXT,
+                serial_prefix  TEXT
+            );
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rid_identity_mfr_code
+            ON rid_identity (mfr_code);
+        """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rid_identity_meta (
+                id             INT PRIMARY KEY DEFAULT 1,
+                last_refreshed TIMESTAMPTZ,
+                source         TEXT,
+                entry_count    INT DEFAULT 0
+            );
         """)
 
         # ---- alerts table ----

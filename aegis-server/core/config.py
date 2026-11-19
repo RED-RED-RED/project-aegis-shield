@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     live_window_s: int = 900                   # Remove from live map after this (15 min)
     live_active_s: int = 120                   # Within this = live/solid; older = stale/dimmed
 
+    # ---- Remote ID make/model reference ----
+    # Source for the FAA Declaration of Compliance list used to resolve a
+    # broadcast serial to a make/model. Blank by default; set it in the GUI
+    # (System > Settings) so the System > Refresh button has somewhere to pull
+    # from. The server fetches this URL, so it needs outbound network.
+    rid_doc_source_url: str = ""
+
     # ---- WebSocket ----
     ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms
 

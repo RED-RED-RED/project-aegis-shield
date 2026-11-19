@@ -202,6 +202,8 @@ export default function FlightHistory() {
               </div>
               <div className="fh-item-sub">
                 {fmtTime(f.start)} · {fmtDur(f.duration_s)} · {f.point_count} pts · {f.node_count} node{f.node_count === 1 ? '' : 's'}
+                {f.make && <span style={{ color: colors.olive }}> · {[f.make, f.model].filter(Boolean).join(' ')}</span>}
+                {f.id_source === 'unverified' && <span className="fh-invalid"> · unverified serial</span>}
                 {f.has_valid_rid === false && <span className="fh-invalid"> · invalid RID</span>}
               </div>
             </div>
@@ -230,7 +232,7 @@ export default function FlightHistory() {
             <div className="fh-detail-head">
               <div>
                 <span className="fh-d-id">{detail.drone_id}</span>
-                <span className="fh-d-meta">{detail.ua_type || ''} · {fmtTime(detail.start)} · {fmtDur(detail.duration_s)}</span>
+                <span className="fh-d-meta">{[detail.make, detail.model].filter(Boolean).join(' ') || detail.ua_type || ''} · {fmtTime(detail.start)} · {fmtDur(detail.duration_s)}</span>
               </div>
               <div className="fh-export">
                 {['gpx', 'kml', 'csv'].map(fmt => (

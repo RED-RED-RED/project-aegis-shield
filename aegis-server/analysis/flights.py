@@ -102,6 +102,9 @@ def summarize(session: list[dict], threat: dict | None = None) -> dict:
         "has_valid_rid":   threat.get("has_valid_rid"),
         "threat_score":    threat.get("threat_score"),
         "threat_level":    threat.get("threat_level"),
+        "make":            threat.get("make"),
+        "model":           threat.get("model"),
+        "id_source":       threat.get("id_source"),
     }
 
 

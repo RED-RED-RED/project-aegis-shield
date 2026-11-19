@@ -26,6 +26,7 @@ from pydantic import ValidationError
 from core.config import Settings
 from db.database import get_pool
 from models.schemas import DetectionEvent, NodeHeartbeat, RFDetectionEvent
+from analysis import rid_identity
 from mqtt.alert_engine import AlertEngine
 from mqtt.ws_broadcaster import WSBroadcaster
 from mqtt.notifier import notifier
@@ -187,6 +188,8 @@ class MQTTSubscriber:
                     and event.drone.operator_id.strip()
                     and event.drone.id
                 )
+                # Decode make/model from the CTA-2063-A serial (offline, cheap).
+                ident = rid_identity.enrich(event.drone.id_type, event.drone.id)
                 await conn.execute("""
                     INSERT INTO drone_tracks (
                         drone_id, first_seen, last_seen,
@@ -195,7 +198,8 @@ class MQTTSubscriber:
                         speed_h, speed_v, heading, status,
                         id_type, ua_type, operator_id,
                         operator_lat, operator_lon, description,
-                        has_valid_rid, detection_count, detecting_nodes
+                        has_valid_rid, detection_count, detecting_nodes,
+                        make, model, mfr_code, id_source
                     ) VALUES (
                         $1, to_timestamp($2), to_timestamp($2),
                         $3, $4, $5,
@@ -203,7 +207,8 @@ class MQTTSubscriber:
                         $11, $12, $13, $14,
                         $15, $16, $17,
                         $18, $19, $20,
-                        $21, 1, ARRAY[$3]
+                        $21, 1, ARRAY[$3],
+                        $22, $23, $24, $25
                     )
                     ON CONFLICT (drone_id) DO UPDATE SET
                         last_seen       = to_timestamp($2),
@@ -233,7 +238,11 @@ class MQTTSubscriber:
                                     drone_tracks.detecting_nodes || ARRAY[$3]
                                 )
                             )
-                        )
+                        ),
+                        make      = COALESCE($22, drone_tracks.make),
+                        model     = COALESCE($23, drone_tracks.model),
+                        mfr_code  = COALESCE($24, drone_tracks.mfr_code),
+                        id_source = $25
                 """,
                     event.drone.id, event.ts,
                     event.node_id, event.transport, event.rssi,
@@ -245,6 +254,7 @@ class MQTTSubscriber:
                     event.drone.operator_lat, event.drone.operator_lon,
                     event.drone.description,
                     has_valid_rid,
+                    ident["make"], ident["model"], ident["mfr_code"], ident["id_source"],
                 )
 
         # 3. Run alert engine (outside transaction — non-critical)

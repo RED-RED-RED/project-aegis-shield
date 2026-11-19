@@ -1,0 +1,13 @@
+{
+  "_note": "Seed make/model reference for CTA-2063-A Remote ID serials. Keyed by the 4-char manufacturer code that opens every compliant serial. Make-level entries (manufacturer only) are reliable; model-level entries require a serial_prefix that pins a specific product. This seed is intentionally small and verified; expand it with the System > Refresh button (pulls the FAA Declaration of Compliance list) or by importing a CSV. Codes exclude the letters I and O per the standard.",
+  "source": "seed",
+  "entries": [
+    {
+      "mfr_code": "1581",
+      "manufacturer": "DJI",
+      "model": null,
+      "serial_prefix": null,
+      "note": "DJI's assigned CTA-2063-A manufacturer code; covers the large majority of consumer drones in the field."
+    }
+  ]
+}

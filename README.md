@@ -42,6 +42,7 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
   - [ARGUS Nodes](#argus-node-deployment)
   - [Remote access — Tailscale](#remote-access--tailscale-recommended)
   - [WireGuard VPN](#wireguard-vpn-alternative)
+  - [Drone make/model reference](#drone-makemodel-reference)
 - [Calibration](#calibration)
 - [AEGIS Shield](#aegis-shield)
 - [API Reference](#api-reference)
@@ -388,6 +389,30 @@ This does `git fetch` + `git reset --hard origin/main`, reinstalls `argus-node/r
 bash scripts/update.sh version       # Show current commit, branch, date, and API version
 # or: make version
 ```
+
+### Drone make/model reference
+
+AEGIS decodes a broadcast Remote ID serial into a drone make (and model when known). A compliant serial follows ANSI/CTA-2063-A — the first four characters are the manufacturer's assigned code — so the make is derived offline at ingest with no network calls. Each drone's `make`, `model`, `mfr_code`, and a graded `id_source` are stored on its track and shown in the Selected Drone panel, the live list, and Flight History.
+
+`id_source` tells you how the value was obtained:
+
+| Source | Meaning |
+|---|---|
+| `doc` | Make + model, matched against the reference table |
+| `prefix` | Make only, from the manufacturer code (model unknown) |
+| `unknown_mfr` | Valid serial, manufacturer code not in the table |
+| `unverified` | `id_type` says serial but the string isn't valid CTA-2063-A (a non-compliance / spoof signal) |
+| `na` | Not a serial ID (e.g. CAA registration) — nothing to decode |
+
+Model-level resolution comes from the **FAA Declaration of Compliance (DoC)** list. A small verified seed (`aegis-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve offline immediately. To expand coverage, set the DoC source URL in **System → Settings** (`rid_doc_source_url`) and click **Refresh now** in that panel, or run it from the server:
+
+```bash
+bash scripts/update-doc-list.sh                       # pull from the configured URL
+bash scripts/update-doc-list.sh --url <DOC_CSV_URL>   # pull from a specific URL
+bash scripts/update-doc-list.sh --file faa_doc.csv    # import a local CSV (air-gapped)
+```
+
+The reference table lives in the database (covered by PBS backups) and persists across container rebuilds. Refresh needs outbound HTTPS from the server; an air-gapped box uses the seed plus `--file` imports. A monthly cron/systemd timer is a reasonable cadence since the list changes slowly.
 
 ---
 

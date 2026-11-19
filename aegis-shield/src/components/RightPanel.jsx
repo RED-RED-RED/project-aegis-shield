@@ -294,6 +294,19 @@ export default function RightPanel() {
   )
 }
 
+// Remote ID make/model, decoded server-side from the CTA-2063-A serial.
+// Returns display text + a variant that drives color, or null when there's
+// nothing worth showing (non-serial IDs).
+function identInfo(drone) {
+  const src = drone.id_source
+  if (src === 'doc')    return { text: [drone.make, drone.model].filter(Boolean).join(' '), variant: 'ok' }
+  if (src === 'prefix') return { text: drone.make || '—', variant: 'ok' }
+  if (src === 'unknown_mfr') return { text: drone.mfr_code ? `Unknown (${drone.mfr_code})` : 'Unknown', variant: 'muted' }
+  if (src === 'unverified')  return { text: 'Unverified serial', variant: 'danger' }
+  return null  // 'na' / missing — e.g. a CAA registration ID, nothing to decode
+}
+const IDENT_COLOR = { ok: 'var(--olive)', muted: 'var(--muted)', danger: 'var(--danger)' }
+
 function DroneRow({ drone, selected, onClick }) {
   const noRid   = !drone.has_valid_rid
   const score   = drone.threat_score
@@ -303,7 +316,18 @@ function DroneRow({ drone, selected, onClick }) {
     <div className={`drone-row ${selected ? 'selected' : ''}`} onClick={onClick}>
       <div className="dr-header">
         <span className="dr-id">{drone.drone_id}</span>
-        <div style={{display:'flex',alignItems:'center',gap:4}}>
+        {(() => {
+          const id = identInfo(drone)
+          if (!id) return null
+          return (
+            <span style={{
+              fontFamily:'var(--mono)', fontSize:9, color:IDENT_COLOR[id.variant],
+              border:`1px solid ${IDENT_COLOR[id.variant]}`, borderRadius:2,
+              padding:'0 4px', marginLeft:4, opacity:0.9, whiteSpace:'nowrap',
+            }}>{id.text}</span>
+          )
+        })()}
+        <div style={{display:'flex',alignItems:'center',gap:4,marginLeft:'auto'}}>
           {score != null && (
             <span style={{
               fontFamily:'var(--mono)',fontSize:9,fontWeight:'bold',
@@ -372,6 +396,17 @@ function DroneDetail({ drone }) {
         <span className="detail-row-label">ID Type</span>
         <span className="detail-row-val">{drone.id_type || '—'}</span>
       </div>
+      {(() => {
+        const id = identInfo(drone)
+        return (
+          <div className="detail-row">
+            <span className="detail-row-label">Make</span>
+            <span className="detail-row-val" style={{color: id ? IDENT_COLOR[id.variant] : 'var(--muted)'}}>
+              {id ? (id.variant === 'danger' ? `⚠ ${id.text}` : id.text) : '—'}
+            </span>
+          </div>
+        )
+      })()}
       <div className="detail-row">
         <span className="detail-row-label">Detections</span>
         <span className="detail-row-val">{drone.detection_count || 0}</span>

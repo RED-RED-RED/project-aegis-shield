@@ -9,6 +9,9 @@ export default function SettingsPanel() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [testMsg, setTestMsg] = useState('')
+  const [rid, setRid] = useState(null)
+  const [ridMsg, setRidMsg] = useState('')
+  const [ridBusy, setRidBusy] = useState(false)
 
   async function load() {
     try {
@@ -16,7 +19,28 @@ export default function SettingsPanel() {
       setSnap(await r.json())
     } catch { setMsg('Could not load settings') }
   }
-  useEffect(() => { load() }, [])
+  async function loadRid() {
+    try {
+      const r = await fetch('/api/system/rid-identity')
+      setRid(await r.json())
+    } catch { /* non-fatal */ }
+  }
+  useEffect(() => { load(); loadRid() }, [])
+
+  async function refreshRid() {
+    setRidBusy(true); setRidMsg('Refreshing from FAA DoC list…')
+    try {
+      const r = await fetch('/api/system/rid-identity/refresh', { method: 'POST' })
+      const j = await r.json()
+      if (j.ok) {
+        setRidMsg(`✓ Updated — ${j.manufacturers} makes, ${j.models} models`)
+        setRid(j)
+      } else {
+        setRidMsg(`✗ ${j.error || 'refresh failed'}`)
+      }
+    } catch { setRidMsg('✗ request failed') }
+    setRidBusy(false)
+  }
 
   const groups = useMemo(() => {
     const g = {}
@@ -64,8 +88,23 @@ export default function SettingsPanel() {
             {group === 'Notifications' && (
               <button className="st-test" onClick={sendTest}>Send test push</button>
             )}
+            {group === 'Remote ID' && (
+              <button className="st-test" onClick={refreshRid} disabled={ridBusy}>
+                {ridBusy ? 'Refreshing…' : 'Refresh now'}
+              </button>
+            )}
           </div>
           {group === 'Notifications' && testMsg && <div className="st-testmsg">{testMsg}</div>}
+          {group === 'Remote ID' && (
+            <div className="st-testmsg">
+              {rid
+                ? `Reference: ${rid.manufacturers} makes, ${rid.models} models${
+                    rid.source ? ` · source: ${rid.source}` : ''}${
+                    rid.last_refreshed ? ` · updated ${new Date(rid.last_refreshed).toLocaleString()}` : ' · not yet refreshed'}`
+                : 'Reference status unavailable'}
+              {ridMsg && <div>{ridMsg}</div>}
+            </div>
+          )}
           <div className="st-fields">
             {fields.map(f => (
               <label key={f.key} className="st-field">

@@ -39,6 +39,8 @@ EDITABLE: dict[str, dict] = {
     # Live map freshness — live-editable
     "live_active_s":           {"type": "int",   "group": "Live map", "label": "Solid window (s)"},
     "live_window_s":           {"type": "int",   "group": "Live map", "label": "Remove after (s)"},
+    # Remote ID make/model reference (FAA Declaration of Compliance source)
+    "rid_doc_source_url":      {"type": "str",   "group": "Remote ID", "label": "FAA DoC source URL"},
 }
 
 # Shown read-only in the GUI for visibility (never secret).

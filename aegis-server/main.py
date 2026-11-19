@@ -57,6 +57,10 @@ async def lifespan(app: FastAPI):
     from core.runtime_settings import load_overrides
     await load_overrides()
 
+    # Seed + load the Remote ID make/model reference (CTA-2063-A identity)
+    from analysis import rid_identity
+    await rid_identity.seed_if_empty()
+
     # Start MQTT subscriber as a background task
     mqtt = MQTTSubscriber(settings)
     mqtt_task = asyncio.create_task(mqtt.run(), name="mqtt-subscriber")
