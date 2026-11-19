@@ -58,6 +58,27 @@ def test_extract_prefix_requires_model_specific_length():
     assert extract_prefixes(["X10PCHAA", "X10PCHBB", "X10PCHCC"]) == ["X10PCH"]
 
 
+def test_extract_prefix_from_range():
+    # FAA RANGE value: prefix is the common prefix of the two endpoints.
+    assert extract_prefixes(["1581F8HG000000000000-1581F8HGZZZZZZZZZZZZ"]) == ["1581F8HG"]
+    assert extract_prefixes(["1581FBLK000000000000-1581FBLKZZZZZZZZZZZZ"]) == ["1581FBLK"]
+
+
+def test_extract_prefix_range_too_wide_emits_nothing():
+    # A range that varies right after the maker code is not model-specific.
+    assert extract_prefixes(["1581A000000000000000-1581ZZZZZZZZZZZZZZZZ"]) == []
+
+
+def test_enrich_resolves_dji_model_from_range_prefix(fresh_index):
+    # After scraping the RANGE filing, the real Matrice serial resolves to model.
+    fresh_index.add("1581", "DJI", None)
+    fresh_index.add("1581F8HG", "DJI", "Matrice 4TD")
+    out = enrich("serial_number", "1581F8HGX265700A1Q0L40")
+    assert out["make"] == "DJI"
+    assert out["model"] == "Matrice 4TD"
+    assert out["id_source"] == "doc"
+
+
 def test_extract_prefix_short_divergence_emits_nothing():
     # Serials that diverge early (effectively random after the maker region)
     # have no reliable model prefix, so nothing is emitted — make is anchored

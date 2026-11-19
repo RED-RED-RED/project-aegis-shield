@@ -40,11 +40,11 @@ export default function SettingsPanel() {
           setRid(s)
           const b = s.build || {}
           if (b.building) {
-            setRidMsg(`Scraping FAA… ${b.done}/${b.total} filings, ${b.prefixes} prefixes`)
+            setRidMsg(`Scraping FAA… ${b.done}/${b.total} filings, ${b.prefixes} prefixes${b.failed ? `, ${b.failed} throttled` : ''}`)
           } else {
             clearInterval(poll); setRidBusy(false)
             setRidMsg(b.error ? `✗ ${b.error}`
-              : `✓ Built — ${s.makes} makes, ${s.models} models, ${s.prefixes} prefixes`)
+              : `✓ Built — ${s.makes} makes, ${s.models} models, ${s.prefixes} prefixes${b.failed ? ` · ${b.failed} filings throttled (rerun to fill in)` : ''}`)
           }
         } catch { /* keep polling */ }
       }, 1500)

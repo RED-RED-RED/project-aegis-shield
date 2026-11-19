@@ -213,19 +213,37 @@ def _common_prefix(strings: list[str]) -> str:
 
 
 def extract_prefixes(values: list[str], min_len: int = MIN_PREFIX_LEN) -> list[str]:
-    """Derive the model-identifying prefix from a filing's serial sample.
+    """Derive the model-identifying prefix(es) from a filing's serial sample.
 
-    A filing is one product, so its serials share a prefix — the longest common
-    prefix of the sample. We only emit it when it's long enough to be
-    model-specific (>= min_len); a short common prefix means the serials diverge
-    early (effectively random after the maker code), so there's no reliable
-    model prefix and we emit nothing rather than a greedy prefix that would
-    mis-match other drones. Make is still anchored separately by the maker code."""
-    vals = sorted({v.strip().upper() for v in values if v and v.strip()})
-    if not vals:
-        return []
-    lcp = _common_prefix(vals)
-    return [lcp] if len(lcp) >= min_len else []
+    FAA filings specify serials two ways:
+      - enumerated: a list of individual serials (e.g. Skydio "X10PCH..."), whose
+        shared prefix is their longest common prefix.
+      - RANGE: a "start-end" value (e.g. "1581F8HG000000000000-1581F8HGZZ...ZZ"),
+        whose model prefix is the common prefix of the two endpoints ("1581F8HG").
+    A serial never contains a dash (CTA-2063-A excludes it), so a dash marks a
+    range. We emit a prefix only when it's long enough to be model-specific
+    (>= min_len); a shorter one is just the maker-code region, so we emit nothing
+    and let the maker code carry the make."""
+    range_prefixes: list[str] = []
+    enumerated: list[str] = []
+    for v in values:
+        v = (v or "").strip().upper()
+        if not v:
+            continue
+        if "-" in v:
+            a, _, b = v.partition("-")
+            p = _common_prefix([a.strip(), b.strip()])
+            if len(p) >= min_len:
+                range_prefixes.append(p)
+        else:
+            enumerated.append(v)
+
+    out = list(dict.fromkeys(range_prefixes))   # dedup, preserve order
+    if enumerated:
+        lcp = _common_prefix(sorted(set(enumerated)))
+        if len(lcp) >= min_len and lcp not in out:
+            out.append(lcp)
+    return out
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -350,7 +368,7 @@ async def import_csv_text(text: str, source: str = "import") -> int:
 # Progress state for the System panel while a rebuild runs.
 _build_state: dict = {
     "building": False, "done": 0, "total": 0,
-    "prefixes": 0, "error": None, "started_at": None,
+    "prefixes": 0, "failed": 0, "error": None, "started_at": None,
 }
 
 
@@ -368,23 +386,57 @@ def _faa_items(payload: dict) -> list[dict]:
     return []
 
 
+async def _faa_get(client, url: str, params: dict, attempts: int = 4):
+    """GET returning parsed JSON, with backoff on the FAA WAF's throttling.
+
+    The uasdoc.faa.gov edge returns 403/429 (an HTML 'Access Denied' page, not
+    JSON) when hit too fast, so a plain scrape silently drops filings. Retry
+    those with growing backoff and surface a clean error if they persist."""
+    import httpx
+    last = None
+    for i in range(attempts):
+        try:
+            r = await client.get(url, params=params)
+            if r.status_code in (403, 429, 500, 502, 503):
+                last = f"HTTP {r.status_code}"
+                await asyncio.sleep(1.5 * (2 ** i))   # 1.5, 3, 6, 12s
+                continue
+            r.raise_for_status()
+            return r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            last = str(e)
+            await asyncio.sleep(1.5 * (2 ** i))
+    raise RuntimeError(f"request failed after {attempts} attempts: {last}")
+
+
 async def rebuild_from_faa(base_url: str, page_size: int = 100,
-                           delay_s: float = 0.1) -> int:
+                           delay_s: float = 0.8) -> int:
     """
     Scrape the FAA DoC API and rebuild the prefix table. Runs in-process on the
     server (which has outbound network). Pages the filing list, fetches each
     filing's serial snapshot, extracts the model prefix(es), and imports
     (prefix → make, model). Returns the number of prefixes stored.
 
+    Paced gently with retry/backoff because the FAA edge throttles bursts
+    (403/429); `_build_state["failed"]` reports any filings that never came
+    through so a throttled run isn't mistaken for a complete one.
+
     base_url is the API root, e.g. "https://uasdoc.faa.gov/api/v1".
     """
     import httpx
+    import random
     from collections import Counter
 
     base = base_url.rstrip("/")
     prefix_map: dict[str, dict] = {}         # model prefix -> {manufacturer, model}
     code_makes: dict[str, Counter] = {}      # 4-char maker code -> Counter(make)
-    _build_state.update(building=True, done=0, total=0, prefixes=0,
+
+    async def _pace():
+        # delay_s plus up to 50% jitter, so the request cadence isn't a uniform
+        # pattern the FAA edge might flag.
+        await asyncio.sleep(delay_s + random.uniform(0, delay_s * 0.5))
+
+    _build_state.update(building=True, done=0, total=0, prefixes=0, failed=0,
                         error=None, started_at=time.time())
     try:
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -392,10 +444,8 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
             filings: list[dict] = []
             page = 0
             while True:
-                r = await client.get(f"{base}/publicDOCRev",
-                                     params={"itemsPerPage": page_size, "pageIndex": page})
-                r.raise_for_status()
-                body = r.json()
+                body = await _faa_get(client, f"{base}/publicDOCRev",
+                                      {"itemsPerPage": page_size, "pageIndex": page})
                 items = _faa_items(body)
                 if not items:
                     break
@@ -406,7 +456,7 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
                     break
                 if page > 1000:   # safety valve
                     break
-                await asyncio.sleep(delay_s)
+                await _pace()
 
             _build_state["total"] = len(filings)
 
@@ -417,14 +467,13 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
                 model = (f.get("modelName") or f.get("model") or "").strip() or None
                 if tracking:
                     try:
-                        sr = await client.get(f"{base}/serialNumbers", params={
+                        body = await _faa_get(client, f"{base}/serialNumbers", {
                             "snapshot": "true", "isPublic": "true",
                             "findBy": "docTrackingNumber",
                             "docTrackingNumber": tracking,
                             "formatForDocView": "true",
                         })
-                        sr.raise_for_status()
-                        values = [it.get("value") for it in _faa_items(sr.json())
+                        values = [it.get("value") for it in _faa_items(body)
                                   if it.get("value")]
                         prefixes = extract_prefixes(values)
                         # Tally the maker code (first 4 chars) -> make, so the
@@ -440,10 +489,11 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
                             elif not cur.get("model") and model:
                                 cur["model"] = model
                     except Exception as e:
+                        _build_state["failed"] += 1
                         log.warning("serials fetch failed for %s: %s", tracking, e)
                 _build_state["done"] += 1
                 _build_state["prefixes"] = len(prefix_map)
-                await asyncio.sleep(delay_s)
+                await _pace()
 
         # Model prefixes (>= MIN_PREFIX_LEN) ...
         entries = [{"serial_prefix": p, "manufacturer": v["manufacturer"], "model": v["model"]}
