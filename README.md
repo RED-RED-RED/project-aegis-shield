@@ -40,7 +40,8 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
   - [AEGIS Server](#aegis-server-deployment)
   - [Managing the server](#managing-the-server)
   - [ARGUS Nodes](#argus-node-deployment)
-  - [WireGuard VPN](#wireguard-vpn-optional)
+  - [Remote access — Tailscale](#remote-access--tailscale-recommended)
+  - [WireGuard VPN](#wireguard-vpn-alternative)
 - [Calibration](#calibration)
 - [AEGIS Shield](#aegis-shield)
 - [API Reference](#api-reference)
@@ -59,7 +60,8 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 git clone https://github.com/RED-RED-RED/project-aegis-shield
 cd project-aegis-shield
 
-# 2. Deploy AEGIS Server (Docker required, Ubuntu/Debian/Pi OS 64-bit)
+# 2. Deploy AEGIS Server (Docker installed automatically; Ubuntu 24.04/26.04 LTS,
+#    Debian 12+, or Pi OS 64-bit — a VM or bare metal both work)
 sudo bash scripts/deploy-aegis-server.sh
 
 # 3. Deploy each ARGUS Node (run on each Pi)
@@ -183,6 +185,15 @@ sudo bash scripts/deploy-aegis-server.sh --yes
 
 The script: installs Docker, builds AEGIS Shield, generates credentials, configures Mosquitto auth, starts all containers via Docker Compose, and installs an `aegis-server.service` systemd unit for auto-start on boot.
 
+> **OS support.** Tested on Ubuntu 24.04 and 26.04 LTS, Debian 12+, and Raspberry Pi OS (64-bit). Docker is installed via the official `get.docker.com` convenience script, which tracks new releases — including fresh LTS codenames. On a brand-new release the Docker apt repo can lag by a few days; if the script reports no candidate for your codename, either retry after a day or install the engine against the previous LTS codename:
+> ```bash
+> # Fallback only if get.docker.com has no package for a brand-new codename.
+> # Point Docker's apt repo at the previous Ubuntu LTS (e.g. use "noble" on 26.04 "resolute"):
+> echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+>   https://download.docker.com/linux/ubuntu noble stable" | sudo tee /etc/apt/sources.list.d/docker.list
+> sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+> ```
+
 **Running services after deployment:**
 
 | Service | Port | Description |
@@ -236,7 +247,7 @@ If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), 
 VITE_API_KEY=your-secret-key-here
 ```
 
-> **Recommendation:** Enable API key auth whenever AEGIS Server is reachable from outside your local network, such as over WireGuard VPN or a public interface.
+> **Recommendation:** Enable API key auth whenever AEGIS Server is reachable from outside your local network, such as over Tailscale, WireGuard VPN, or a public interface.
 
 ### ARGUS Node deployment
 
@@ -255,6 +266,15 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh \
   --unattended \
   --node-id ARGUS-01 \
   --server-ip 192.168.1.100 \
+  --mqtt-password yourmqttpass
+
+# With a Tailscale fallback — node uses the LAN IP on-site, the Tailscale
+# name when remote (see "Remote access — Tailscale" below)
+sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+  --unattended \
+  --node-id ARGUS-01 \
+  --server-ip 192.168.1.100 \
+  --mqtt-fallback aegis-server \
   --mqtt-password yourmqttpass
 
 # Non-interactive install (legacy UART GPS — requires reboot)
@@ -292,9 +312,35 @@ sudo bash scripts/deploy-argus-node.sh \
   --unattended --node-id ARGUS-02 --server-ip 192.168.1.100 --mqtt-password pass
 ```
 
-### WireGuard VPN (optional)
+### Remote access — Tailscale (recommended)
 
-Required when ARGUS nodes are deployed outside your LAN:
+Nodes reach the server over the LAN when on-site and over [Tailscale](https://tailscale.com) when remote, automatically. The node tries its primary host (`mqtt.host`, the LAN IP) first; if that's unreachable within `mqtt.connect_timeout_s`, it flips to `mqtt.host_fallback` (the server's Tailscale name) and keeps alternating as conditions change — so a node works at home even if Tailscale is down, and from anywhere once it's up.
+
+**1. Install Tailscale on the server and each node** (one tailnet for the whole fleet):
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up            # authenticate once in the browser link it prints
+```
+
+**2. Name the server and enable MagicDNS.** In the Tailscale admin console, rename the server machine to something stable (e.g. `aegis-server`) and turn on **MagicDNS** (DNS tab) so that name resolves across the tailnet.
+
+**3. Point nodes at both addresses.** Set the LAN IP as `host` and the server's Tailscale name as `host_fallback` — either at install time (`--mqtt-fallback aegis-server`) or in `/etc/argus-node/config.yaml`:
+
+```yaml
+mqtt:
+  host: "192.168.1.100"     # LAN IP — primary, used on-site
+  host_fallback: "aegis-server"   # Tailscale MagicDNS name — used when remote
+  connect_timeout_s: 10
+```
+
+The Mosquitto container binds `0.0.0.0:1883`, so it's already reachable over the `tailscale0` interface — just allow 1883 from the tailnet in the server's firewall if you run one. The tailnet is the trusted network that the platform's LAN-only security model assumes; for tighter control, tag nodes (`tag:aegis-node`) and restrict them to the server with a Tailscale ACL.
+
+> **Enable API key auth** (see above) whenever the server is reachable beyond your LAN, Tailscale included.
+
+### WireGuard VPN (alternative)
+
+If you prefer a self-hosted VPN over Tailscale:
 
 ```bash
 # On AEGIS server first
@@ -304,9 +350,7 @@ sudo bash scripts/setup-wireguard.sh server
 sudo bash scripts/setup-wireguard.sh node <SERVER_PUBLIC_IP> <NODE_INDEX>
 ```
 
-Or pass `ARGUS_USE_VPN=1` to `deploy-argus-node.sh` and it handles VPN setup automatically.
-
-VPN addressing: AEGIS server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`…
+Or pass `ARGUS_USE_VPN=1` to `deploy-argus-node.sh` and it handles VPN setup automatically. VPN addressing: AEGIS server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`… With WireGuard, set `host_fallback` to the server's VPN address (`10.100.0.1`) for the same LAN-first / VPN-fallback behaviour.
 
 ### Health check
 

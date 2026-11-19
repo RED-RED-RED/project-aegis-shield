@@ -37,13 +37,14 @@ LOG_DIR="/var/log/argus-node"
 UNATTENDED=false
 OPT_NODE_ID=""; OPT_SERVER_IP=""; OPT_MQTT_PASS=""
 OPT_WIFI_IFACE="wlan1"; OPT_WIFI_IFACE_5G=""; OPT_SDR=false
-OPT_REPO=""; OPT_GPS_MODE="usb"
+OPT_REPO=""; OPT_GPS_MODE="usb"; OPT_MQTT_FALLBACK=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --unattended)      UNATTENDED=true;;
     --node-id)         OPT_NODE_ID="$2";       shift;;
     --server-ip)       OPT_SERVER_IP="$2";     shift;;
+    --mqtt-fallback)   OPT_MQTT_FALLBACK="$2"; shift;;
     --mqtt-password)   OPT_MQTT_PASS="$2";     shift;;
     --wifi-iface)      OPT_WIFI_IFACE="$2";    shift;;
     --wifi-iface-5g)   OPT_WIFI_IFACE_5G="$2"; shift;;
@@ -88,6 +89,14 @@ if [[ "$UNATTENDED" == false ]]; then
   [[ -n "$SERVER_IP" ]] || fail "Server IP is required"
   echo ""
 
+  echo "  Tailscale fallback (optional)"
+  echo "  The server's Tailscale name (e.g. aegis-server). If set, a node that"
+  echo "  can't reach the LAN IP above reconnects over Tailscale, then flips back."
+  echo "  Requires Tailscale running on this node and the server. Leave blank to skip."
+  read -rp "    Server Tailscale name: " MQTT_FALLBACK
+  MQTT_FALLBACK="${MQTT_FALLBACK:-}"
+  echo ""
+
   echo "  MQTT password"
   echo "  The MQTT broker password set during AEGIS Server deployment."
   echo "  Find it in DEPLOYMENT.md or aegis-server/docker/.env on the server."
@@ -117,6 +126,7 @@ else
   SERVER_IP="$OPT_SERVER_IP"
   MQTT_USER="rid"
   MQTT_PASS="$OPT_MQTT_PASS"
+  MQTT_FALLBACK="$OPT_MQTT_FALLBACK"
   WIFI_IFACE="$OPT_WIFI_IFACE"
   WIFI_IFACE_5G="$OPT_WIFI_IFACE_5G"
   ENABLE_SDR="$OPT_SDR"
@@ -243,7 +253,9 @@ site_name: "default"
 
 mqtt:
   host: "${SERVER_IP}"
+  host_fallback: "${MQTT_FALLBACK}"
   port: 1883
+  connect_timeout_s: 10
   user: "${MQTT_USER}"
   password: "${MQTT_PASS}"
   tls: false

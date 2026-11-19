@@ -27,8 +27,12 @@ class NodeConfig:
     site_name: str = "default"
 
     # ---- MQTT ----
-    mqtt_host: str = "192.168.1.100"     # Central server IP
+    mqtt_host: str = "192.168.1.100"     # Primary server address — the LAN IP when the node is on-site
+    mqtt_host_fallback: str = ""         # Secondary address tried when the primary is unreachable —
+                                         # typically the server's Tailscale MagicDNS name (e.g. "aegis-server")
+                                         # so a remote node reconnects over the tailnet. Leave empty to disable.
     mqtt_port: int = 1883
+    mqtt_connect_timeout_s: float = 10.0  # If a host doesn't connect within this, switch to the other host
     mqtt_user: str = ""
     mqtt_password: str = ""
     mqtt_tls: bool = False
@@ -145,6 +149,7 @@ def _apply_env(cfg: NodeConfig):
     overrides = {
         "ARGUS_NODE_ID":       ("node_id",       str),
         "ARGUS_MQTT_HOST":     ("mqtt_host",      str),
+        "ARGUS_MQTT_HOST_FALLBACK": ("mqtt_host_fallback", str),
         "ARGUS_MQTT_PORT":     ("mqtt_port",      int),
         "ARGUS_MQTT_USER":     ("mqtt_user",      str),
         "ARGUS_MQTT_PASSWORD": ("mqtt_password",  str),

@@ -43,6 +43,17 @@ class MQTTPublisher:
         self._connected = threading.Event()
         self._stop = threading.Event()
 
+        # Primary first (LAN IP when on-site), then the optional fallback
+        # (the server's Tailscale name, so a remote node reconnects over the
+        # tailnet). The supervisor thread rotates through these whenever the
+        # current host fails to connect or the link drops.
+        self._hosts = [cfg.mqtt_host] + (
+            [cfg.mqtt_host_fallback]
+            if cfg.mqtt_host_fallback and cfg.mqtt_host_fallback != cfg.mqtt_host
+            else []
+        )
+        self._host_idx = 0
+
         self._client = mqtt.Client(
             client_id=f"argus-node-{self.node_id}",
             clean_session=True,
@@ -66,15 +77,54 @@ class MQTTPublisher:
     # ------------------------------------------------------------------ #
 
     def connect(self):
-        self._client.connect_async(self.cfg.mqtt_host, self.cfg.mqtt_port, keepalive=60)
+        host = self._hosts[self._host_idx]
+        self._client.connect_async(host, self.cfg.mqtt_port, keepalive=60)
         self._client.loop_start()
 
         # Start the drain thread
         self._drain_thread = threading.Thread(target=self._drain_queue, daemon=True)
         self._drain_thread.start()
 
-        # Publish online status once connected
-        log.info(f"MQTT connecting to {self.cfg.mqtt_host}:{self.cfg.mqtt_port}…")
+        # Supervisor rotates LAN <-> Tailscale when a host won't connect.
+        # Only needed when a fallback host is configured.
+        if len(self._hosts) > 1:
+            self._supervisor_thread = threading.Thread(target=self._supervise, daemon=True)
+            self._supervisor_thread.start()
+
+        if len(self._hosts) > 1:
+            log.info(
+                f"MQTT connecting to {host}:{self.cfg.mqtt_port}… "
+                f"(fallback: {self._hosts[1]})"
+            )
+        else:
+            log.info(f"MQTT connecting to {host}:{self.cfg.mqtt_port}…")
+
+    def _supervise(self):
+        """
+        Watch the connection and rotate to the next host when the current one
+        fails to connect (or drops) within mqtt_connect_timeout_s. With a LAN
+        primary and a Tailscale fallback, this means: on-site the node binds to
+        the LAN IP; if that's unreachable (node is remote, or the LAN path is
+        down) it flips to the Tailscale name, and back again when conditions
+        change. paho keeps retrying the current host on its own between flips.
+        """
+        timeout = max(self.cfg.mqtt_connect_timeout_s, 1.0)
+        while not self._stop.is_set():
+            # Returns immediately while connected; blocks up to `timeout` when not.
+            if self._connected.wait(timeout=timeout):
+                # Connected — re-check periodically so a later drop is caught.
+                self._stop.wait(timeout=5.0)
+                continue
+            if self._stop.is_set():
+                break
+            # Still not connected after the timeout — try the other host.
+            self._host_idx = (self._host_idx + 1) % len(self._hosts)
+            next_host = self._hosts[self._host_idx]
+            log.warning(f"MQTT host unreachable — switching to {next_host}:{self.cfg.mqtt_port}")
+            try:
+                self._client.connect_async(next_host, self.cfg.mqtt_port, keepalive=60)
+            except Exception as e:
+                log.error(f"MQTT reconnect to {next_host} failed: {e}")
 
     def disconnect(self):
         self._stop.set()
@@ -227,7 +277,7 @@ class MQTTPublisher:
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            log.info(f"MQTT connected to {self.cfg.mqtt_host}")
+            log.info(f"MQTT connected to {self._hosts[self._host_idx]}")
             self._connected.set()
             self._publish_status("online")
         else:
