@@ -55,9 +55,11 @@ _HEX_LEN = set("123456789ABCDEF")   # length code is 1..F (never 0)
 
 SEED_PATH = Path(__file__).resolve().parent.parent / "data" / "rid_identity_seed.json"
 
-# Shortest prefix we'll trust from a scrape. Below this a prefix is too generic
-# and risks matching unrelated drones.
-MIN_PREFIX_LEN = 4
+# Shortest prefix we'll trust as model-specific from a scrape. Below this the
+# serials diverge too early to pin a model (it's just the maker-code region),
+# so we emit nothing and let the maker code carry the make. Skydio's "X10PCH"
+# (6) passes; DJI's "1581F" (5, random after) does not.
+MIN_PREFIX_LEN = 6
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -96,10 +98,15 @@ class PrefixIndex:
 
     def __init__(self):
         self.entries: list[tuple[str, str | None, str | None]] = []
+        # 4-char CTA manufacturer code -> the make that actually owns it. Used to
+        # anchor make and reject a third-party filing that reuses another
+        # maker's serial space (e.g. "SBG Modified DJI Mini" under DJI's 1581).
+        self.code_make: dict[str, str] = {}
         self._sorted = True
 
     def clear(self):
         self.entries = []
+        self.code_make = {}
         self._sorted = True
 
     def add(self, prefix, manufacturer=None, model=None):
@@ -107,6 +114,9 @@ class PrefixIndex:
         if not prefix:
             return
         self.entries.append((prefix, (manufacturer or None), (model or None)))
+        # A 4-char model-less entry is a manufacturer-code -> make anchor.
+        if len(prefix) == 4 and manufacturer and not model:
+            self.code_make[prefix] = manufacturer
         self._sorted = False
 
     def _ensure_sorted(self):
@@ -145,6 +155,15 @@ _index = PrefixIndex()
 # Enrichment (called per detection at ingest)
 # ────────────────────────────────────────────────────────────────────────────
 
+def _same_make(a: str, b: str) -> bool:
+    """True when make `a` belongs to code-owner `b` — equal, or a's name starts
+    with b's (so 'DJI Technologies' counts as DJI, but 'SBG Modified DJI Mini'
+    does not, since it doesn't start with 'DJI')."""
+    if not a or not b:
+        return False
+    return a.strip().upper().startswith(b.strip().upper())
+
+
 def enrich(id_type: str, serial: str) -> dict:
     """Map a broadcast (id_type, serial) to {make, model, mfr_code, id_source,
     serial_valid}. Pure and cheap; reads only the in-memory index."""
@@ -155,14 +174,23 @@ def enrich(id_type: str, serial: str) -> dict:
         return out  # CAA registration / unknown — nothing to decode
 
     parsed = parse_cta2063a(serial)
-    out["mfr_code"] = parsed.get("mfr_code")
+    code = parsed.get("mfr_code")
+    out["mfr_code"] = code
     out["serial_valid"] = parsed["valid"]
 
     make, model, _prefix = _index.match(serial)
-    if make and model:
+    auth = _index.code_make.get(code) if code else None   # who owns this code
+
+    if make and auth and not _same_make(make, auth):
+        # A filing in another maker's serial space (third-party / modifier):
+        # trust only the code owner, drop the misattributed model.
+        out.update(make=auth, model=None, id_source="prefix")
+    elif make and model:
         out.update(make=make, model=model, id_source="doc")
     elif make:
         out.update(make=make, id_source="prefix")
+    elif auth:
+        out.update(make=auth, id_source="prefix")
     elif parsed["valid"]:
         out["id_source"] = "unknown_mfr"   # valid serial we just don't have on file
     else:
@@ -185,28 +213,19 @@ def _common_prefix(strings: list[str]) -> str:
 
 
 def extract_prefixes(values: list[str], min_len: int = MIN_PREFIX_LEN) -> list[str]:
-    """Derive the model-identifying prefix(es) from a filing's serial sample.
+    """Derive the model-identifying prefix from a filing's serial sample.
 
-    Most filings share one prefix (one product), so the longest common prefix
-    of the sample is it. When a filing mixes series (short common prefix), fall
-    back to bucketing by the first `min_len` chars and taking each bucket's
-    common prefix, so we still emit usable, specific prefixes."""
+    A filing is one product, so its serials share a prefix — the longest common
+    prefix of the sample. We only emit it when it's long enough to be
+    model-specific (>= min_len); a short common prefix means the serials diverge
+    early (effectively random after the maker code), so there's no reliable
+    model prefix and we emit nothing rather than a greedy prefix that would
+    mis-match other drones. Make is still anchored separately by the maker code."""
     vals = sorted({v.strip().upper() for v in values if v and v.strip()})
     if not vals:
         return []
     lcp = _common_prefix(vals)
-    if len(lcp) >= min_len:
-        return [lcp]
-    buckets: dict[str, list[str]] = {}
-    for v in vals:
-        if len(v) >= min_len:
-            buckets.setdefault(v[:min_len], []).append(v)
-    out = []
-    for b in buckets.values():
-        p = _common_prefix(b)
-        if len(p) >= min_len:
-            out.append(p)
-    return out
+    return [lcp] if len(lcp) >= min_len else []
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -360,9 +379,11 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
     base_url is the API root, e.g. "https://uasdoc.faa.gov/api/v1".
     """
     import httpx
+    from collections import Counter
 
     base = base_url.rstrip("/")
-    prefix_map: dict[str, dict] = {}   # prefix -> {manufacturer, model}
+    prefix_map: dict[str, dict] = {}         # model prefix -> {manufacturer, model}
+    code_makes: dict[str, Counter] = {}      # 4-char maker code -> Counter(make)
     _build_state.update(building=True, done=0, total=0, prefixes=0,
                         error=None, started_at=time.time())
     try:
@@ -405,9 +426,14 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
                         sr.raise_for_status()
                         values = [it.get("value") for it in _faa_items(sr.json())
                                   if it.get("value")]
-                        for p in extract_prefixes(values):
-                            # First writer wins, but fill in a model if a later
-                            # filing has one for the same prefix.
+                        prefixes = extract_prefixes(values)
+                        # Tally the maker code (first 4 chars) -> make, so the
+                        # make that files the most products under a code owns it.
+                        code = (prefixes[0][:4] if prefixes
+                                else (values[0][:4].upper() if values else None))
+                        if code and make:
+                            code_makes.setdefault(code, Counter())[make] += 1
+                        for p in prefixes:
                             cur = prefix_map.get(p)
                             if cur is None:
                                 prefix_map[p] = {"manufacturer": make, "model": model}
@@ -419,8 +445,22 @@ async def rebuild_from_faa(base_url: str, page_size: int = 100,
                 _build_state["prefixes"] = len(prefix_map)
                 await asyncio.sleep(delay_s)
 
+        # Model prefixes (>= MIN_PREFIX_LEN) ...
         entries = [{"serial_prefix": p, "manufacturer": v["manufacturer"], "model": v["model"]}
                    for p, v in prefix_map.items()]
+        # ... plus one maker-code -> make anchor per code (plurality winner).
+        code_entries = {c: ctr.most_common(1)[0][0] for c, ctr in code_makes.items() if ctr}
+        # Keep any seed-defined code anchors the scrape didn't cover (e.g. DJI 1581).
+        try:
+            for e in json.loads(SEED_PATH.read_text()).get("entries", []):
+                sp = (e.get("serial_prefix") or "").strip().upper()
+                if len(sp) == 4 and e.get("manufacturer") and not e.get("model"):
+                    code_entries.setdefault(sp, e["manufacturer"])
+        except Exception:
+            pass
+        for code, mk in code_entries.items():
+            entries.append({"serial_prefix": code, "manufacturer": mk, "model": None})
+
         if not entries:
             raise RuntimeError("No serial prefixes extracted — check the source URL/API shape.")
         count = await import_entries(entries, source="faa-doc")

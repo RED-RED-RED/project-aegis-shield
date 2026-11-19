@@ -404,7 +404,7 @@ AEGIS decodes a broadcast Remote ID serial into a drone make and model. It match
 | `unverified` | No prefix match and the serial isn't valid CTA-2063-A (a non-compliance / spoof signal) |
 | `na` | Not a serial ID (e.g. CAA registration) — nothing to decode |
 
-A matched prefix wins over strict CTA-2063-A validity, since some real products ship serials the standard would reject; validity is still tracked separately for the spoof signal.
+A matched prefix wins over strict CTA-2063-A validity, since some real products ship serials the standard would reject; validity is still tracked separately for the spoof signal. The **make is anchored to the manufacturer code** (the maker that files the most products under a code owns it): a third-party or "modified" filing sitting in another maker's serial space can't override it, so a DJI airframe stays "DJI" rather than being mislabeled by a modifier's filing — it just loses the model in that case.
 
 A small verified seed (`aegis-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve immediately. To build full coverage, click **Rebuild from FAA** in **System → Settings → Remote ID** (or run it from the server). The server scrapes the FAA DoC API set in `rid_doc_source_url` (default `https://uasdoc.faa.gov/api/v1`): it pages the filing list, pulls each filing's serial snapshot, extracts the prefixes, and loads `prefix → make/model`. It runs in the background with live progress.
 

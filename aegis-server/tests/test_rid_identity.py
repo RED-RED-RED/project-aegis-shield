@@ -51,15 +51,19 @@ def test_extract_prefix_skydio():
     assert extract_prefixes(SKYDIO_X10PCH) == ["X10PCH"]
 
 
-def test_extract_prefix_dji_like():
-    vals = ["1581F1A2B3C4D5E6F", "1581F9Z8Y7X6W5V4U", "1581FABCDEFGHJKLM"]
-    assert extract_prefixes(vals) == ["1581F"]
+def test_extract_prefix_requires_model_specific_length():
+    # "1581F" (5) is just DJI's code + length char — not model-specific — so no
+    # prefix is emitted; a genuinely shared 6+ prefix is.
+    assert extract_prefixes(["1581F1A2B3C4D5E6F", "1581F9Z8Y7X6W5V4U"]) == []
+    assert extract_prefixes(["X10PCHAA", "X10PCHBB", "X10PCHCC"]) == ["X10PCH"]
 
 
-def test_extract_prefix_mixed_series_falls_back_to_buckets():
-    vals = ["ABCD1111", "ABCD2222", "WXYZ9999", "WXYZ8888"]
-    out = set(extract_prefixes(vals))
-    assert out == {"ABCD", "WXYZ"}
+def test_extract_prefix_short_divergence_emits_nothing():
+    # Serials that diverge early (effectively random after the maker region)
+    # have no reliable model prefix, so nothing is emitted — make is anchored
+    # separately by the maker code.
+    vals = ["1581F1AAA", "1581F9ZZZ", "1581FQ123"]  # common prefix "1581F" (5) < 6
+    assert extract_prefixes(vals) == []
 
 
 def test_extract_prefix_empty():
@@ -106,6 +110,28 @@ def test_enrich_longest_prefix_wins(fresh_index):
     fresh_index.add("1581F9A", "DJI", "Mini 4 Pro")
     out = enrich("serial_number", "1581F9A4567890ABCDE")
     assert out["model"] == "Mini 4 Pro"
+    assert out["id_source"] == "doc"
+
+
+def test_enrich_rejects_third_party_in_code_space(fresh_index):
+    # DJI owns 1581. A third-party "SBG Modified DJI Mini" filing lives in that
+    # space; a real DJI Matrice serial must NOT be labeled the SBG Mini — it
+    # falls back to make DJI, model unknown.
+    fresh_index.add("1581", "DJI", None)                       # code anchor
+    fresh_index.add("1581F8", "SBG Modified DJI Mini", "Mini") # third-party filing
+    out = enrich("serial_number", "1581F8HGX265700A1Q0L40")
+    assert out["make"] == "DJI"
+    assert out["model"] is None
+    assert out["id_source"] == "prefix"
+
+
+def test_enrich_trusts_matching_make_in_code_space(fresh_index):
+    # A genuine DJI filing (make starts with "DJI") keeps its model.
+    fresh_index.add("1581", "DJI", None)
+    fresh_index.add("1581F8HG", "DJI", "Matrice 4TD")
+    out = enrich("serial_number", "1581F8HGX265700A1Q0L40")
+    assert out["make"] == "DJI"
+    assert out["model"] == "Matrice 4TD"
     assert out["id_source"] == "doc"
 
 
