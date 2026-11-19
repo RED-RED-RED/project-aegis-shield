@@ -101,3 +101,24 @@ async def test_normal_drone_unaffected():
     n = notif()
     # no category set -> normal gating: low is dropped
     assert await n.notify_alert(alert(level="low", category="new_drone")) is False
+
+
+# ── push body includes make/model and category ──────────────────────────────
+
+def test_body_includes_make_model():
+    n = notif()
+    body = n._alert_body(alert(make="DJI", model="Matrice 4TD"))
+    assert "Drone: DJI Matrice 4TD" in body
+
+
+def test_body_includes_category_when_tagged():
+    n = notif()
+    drone_registry.set_cached("D1", "watchlist")
+    body = n._alert_body(alert(make="DJI", model="Matrice 4TD"))
+    assert "Status: Watchlist" in body
+
+
+def test_body_omits_status_when_untagged():
+    n = notif()
+    body = n._alert_body(alert())
+    assert "Status:" not in body

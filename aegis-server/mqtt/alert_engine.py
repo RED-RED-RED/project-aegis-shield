@@ -26,6 +26,7 @@ from db.database import get_pool
 from models.schemas import DetectionEvent, NodeHeartbeat
 from mqtt.ws_broadcaster import WSBroadcaster
 from mqtt.notifier import notifier
+from analysis import rid_identity
 
 log = logging.getLogger("alerts")
 
@@ -149,8 +150,14 @@ class AlertEngine:
                     "lat": drone.lat,
                     "lon": drone.lon,
                 })
+        # Decode make/model from the serial once, attach to every alert for
+        # this drone so the notification can name it ("DJI Matrice 4TD").
+        ident = rid_identity.enrich(drone.id_type, drone.id)
+
         # Write and broadcast all generated alerts (dedup checked here)
         for alert in alerts:
+            alert.setdefault("make", ident["make"])
+            alert.setdefault("model", ident["model"])
             key = (alert["category"], alert.get("drone_id"), alert.get("node_id"))
             now_ts = time.time()
             if now_ts - self._dedup[key] < self.settings.alert_dedup_window_s:

@@ -54,6 +54,11 @@ def category_for(drone_id: str | None) -> str:
     return _cache.get(drone_id, DEFAULT_CATEGORY)
 
 
+def label_for(key: str) -> str:
+    c = _BY_KEY.get(key)
+    return c["label"] if c else key
+
+
 def behavior_for(drone_id: str | None) -> str:
     """'suppress' | 'normal' | 'escalate' for this drone's current category."""
     cat = category_for(drone_id)

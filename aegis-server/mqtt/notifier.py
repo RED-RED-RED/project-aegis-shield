@@ -157,11 +157,20 @@ class PushoverNotifier:
         return True
 
     def _alert_body(self, alert: dict) -> str:
+        from core import drone_registry
         lines = []
+        # Lead with the identified drone when we have it.
+        ident = " ".join(x for x in [alert.get("make"), alert.get("model")] if x)
+        if ident:
+            lines.append(f"Drone: {ident}")
         if alert.get("description"):
             lines.append(alert["description"])
         if alert.get("drone_id"):
             lines.append(f"ID: {alert['drone_id']}")
+            # Note the registry category when it's been tagged (explains escalation).
+            cat = drone_registry.category_for(alert.get("drone_id"))
+            if cat != drone_registry.DEFAULT_CATEGORY:
+                lines.append(f"Status: {drone_registry.label_for(cat)}")
         if alert.get("node_id"):
             lines.append(f"Node: {alert['node_id']}")
         if alert.get("lat") is not None and alert.get("lon") is not None:
