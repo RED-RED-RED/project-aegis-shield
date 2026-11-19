@@ -63,11 +63,10 @@ class Settings(BaseSettings):
     live_active_s: int = 120                   # Within this = live/solid; older = stale/dimmed
 
     # ---- Remote ID make/model reference ----
-    # Source for the FAA Declaration of Compliance list used to resolve a
-    # broadcast serial to a make/model. Blank by default; set it in the GUI
-    # (System > Settings) so the System > Refresh button has somewhere to pull
-    # from. The server fetches this URL, so it needs outbound network.
-    rid_doc_source_url: str = ""
+    # FAA DoC API root used to build the serial-prefix -> make/model table.
+    # The server scrapes this (needs outbound network), so a locked-down box
+    # can clear it and import a CSV instead. Editable in System > Settings.
+    rid_doc_source_url: str = "https://uasdoc.faa.gov/api/v1"
 
     # ---- WebSocket ----
     ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms

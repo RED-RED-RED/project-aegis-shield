@@ -7,6 +7,7 @@ per node and for the server itself, plus a current snapshot, from node_health.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Body, Query
@@ -17,6 +18,9 @@ from core.runtime_settings import get as rt_get
 
 log = logging.getLogger("system-route")
 router = APIRouter()
+
+# Holds the in-flight rebuild task so a second request doesn't start another.
+_rebuild_task: asyncio.Task | None = None
 
 # range -> (window, bucket seconds). Bucket keeps each series to a sane point
 # count regardless of how often samples arrive.
@@ -97,34 +101,36 @@ async def health_history(range: str = Query("24h")):
 
 @router.get("/rid-identity")
 async def rid_identity_status():
-    """Current state of the make/model reference table for the System panel."""
+    """Current state of the make/model reference table + any in-flight build."""
     status = await rid_identity.get_status()
     status["source_url"] = rt_get("rid_doc_source_url") or ""
     return status
 
 
-@router.post("/rid-identity/refresh")
-async def rid_identity_refresh(payload: dict = Body(default=None)):
+@router.post("/rid-identity/rebuild")
+async def rid_identity_rebuild(payload: dict = Body(default=None)):
     """
-    Manually refresh the make/model reference from the FAA Declaration of
-    Compliance list. Uses the URL in the request body if given, else the
-    `rid_doc_source_url` setting. No auth by design (trusted LAN).
+    Kick off a background scrape of the FAA DoC API to rebuild the
+    serial-prefix -> make/model table. Returns immediately; poll GET
+    /rid-identity for progress. No auth by design (trusted LAN).
     """
-    url = (payload or {}).get("url") or rt_get("rid_doc_source_url")
-    if not url:
-        return {
-            "ok": False,
-            "error": "No source URL configured. Set 'rid_doc_source_url' in "
-                     "Settings or pass a url, then try again.",
-        }
-    try:
-        count = await rid_identity.refresh_from_url(url)
-    except Exception as e:
-        log.warning("RID identity refresh failed: %s", e)
-        return {"ok": False, "error": f"Refresh failed: {e}"}
-    status = await rid_identity.get_status()
-    status["ok"] = True
-    return status
+    global _rebuild_task
+    if _rebuild_task and not _rebuild_task.done():
+        return {"ok": False, "error": "A rebuild is already running.",
+                "build": rid_identity.build_state()}
+    base = (payload or {}).get("url") or rt_get("rid_doc_source_url")
+    if not base:
+        return {"ok": False,
+                "error": "No source URL configured. Set 'rid_doc_source_url' in Settings."}
+
+    async def _run():
+        try:
+            await rid_identity.rebuild_from_faa(base)
+        except Exception as e:
+            log.warning("RID identity rebuild task ended with error: %s", e)
+
+    _rebuild_task = asyncio.create_task(_run())
+    return {"ok": True, "started": True, "build": rid_identity.build_state()}
 
 
 @router.post("/rid-identity/import")

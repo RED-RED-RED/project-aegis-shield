@@ -1,25 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
-# update-doc-list.sh — refresh the Remote ID make/model reference table
+# update-doc-list.sh — rebuild the Remote ID make/model reference table
 # =============================================================================
-# The AEGIS server resolves a broadcast CTA-2063-A serial to a drone make/model
-# using a reference table seeded from the FAA Declaration of Compliance list.
-# This script refreshes that table. Two modes:
+# The AEGIS server resolves a broadcast Remote ID serial to a drone make/model
+# by longest-prefix match against serial prefixes scraped from the FAA
+# Declaration of Compliance (DoC) serial lists. This script triggers that
+# rebuild (or imports a CSV on an air-gapped box). Modes:
 #
-#   # Pull from the URL configured in Settings (rid_doc_source_url):
+#   # Scrape the FAA DoC API using the root in Settings (rid_doc_source_url):
 #   bash scripts/update-doc-list.sh
 #
-#   # Pull from a specific URL:
-#   bash scripts/update-doc-list.sh --url https://example.gov/doc-list.csv
+#   # Scrape from a specific API root:
+#   bash scripts/update-doc-list.sh --url https://uasdoc.faa.gov/api/v1
 #
-#   # Import a local CSV (air-gapped server — no outbound network):
-#   bash scripts/update-doc-list.sh --file faa_doc.csv
+#   # Import a local CSV (serial_prefix,manufacturer,model) — no network:
+#   bash scripts/update-doc-list.sh --file prefixes.csv
 #
 # Options:
 #   --server URL   AEGIS server base (default http://localhost:8000)
-#   --url URL      One-off source URL to pull from (overrides the setting)
-#   --file PATH    Import a local CSV instead of fetching
+#   --url URL      One-off FAA API root (overrides the setting)
+#   --file PATH    Import a local CSV instead of scraping
 #
+# The scrape runs in the background on the server; this returns once it has
+# started. Watch progress in System > Settings or `make server-logs`.
 # If AEGIS_API_KEY is set in the environment, it is sent as X-Api-Key.
 # Intended for manual use or a monthly cron/systemd timer on the server.
 # =============================================================================
@@ -56,12 +59,12 @@ PY
   rm -f /tmp/doc_payload.json
 else
   if [[ -n "$URL" ]]; then
-    echo "Refreshing from ${URL} via ${SERVER} …"
-    curl -fsS "${HDR[@]}" -X POST "${SERVER}/api/system/rid-identity/refresh" \
+    echo "Starting FAA scrape from ${URL} via ${SERVER} …"
+    curl -fsS "${HDR[@]}" -X POST "${SERVER}/api/system/rid-identity/rebuild" \
          --data "$(python3 -c 'import json,sys; print(json.dumps({"url": sys.argv[1]}))' "$URL")"
   else
-    echo "Refreshing from the configured source URL via ${SERVER} …"
-    curl -fsS "${HDR[@]}" -X POST "${SERVER}/api/system/rid-identity/refresh" --data '{}'
+    echo "Starting FAA scrape from the configured API root via ${SERVER} …"
+    curl -fsS "${HDR[@]}" -X POST "${SERVER}/api/system/rid-identity/rebuild" --data '{}'
   fi
 fi
 echo   # trailing newline after the JSON response

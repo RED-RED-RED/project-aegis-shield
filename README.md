@@ -392,27 +392,29 @@ bash scripts/update.sh version       # Show current commit, branch, date, and AP
 
 ### Drone make/model reference
 
-AEGIS decodes a broadcast Remote ID serial into a drone make (and model when known). A compliant serial follows ANSI/CTA-2063-A — the first four characters are the manufacturer's assigned code — so the make is derived offline at ingest with no network calls. Each drone's `make`, `model`, `mfr_code`, and a graded `id_source` are stored on its track and shown in the Selected Drone panel, the live list, and Flight History.
+AEGIS decodes a broadcast Remote ID serial into a drone make and model. It matches the serial by **longest prefix** against serial prefixes taken from the FAA Declaration of Compliance (DoC) serial lists: within a filing every serial shares a model-specific prefix (e.g. a Skydio X10-with-parachute serial is `X10PCH` + 4 chars), so the longest known prefix a serial starts with gives the make and model. Each drone's `make`, `model`, `mfr_code`, and a graded `id_source` are stored on its track and shown in the Selected Drone panel, the live list, and Flight History.
 
-`id_source` tells you how the value was obtained:
+`id_source` tells you how confident the value is:
 
 | Source | Meaning |
 |---|---|
-| `doc` | Make + model, matched against the reference table |
-| `prefix` | Make only, from the manufacturer code (model unknown) |
-| `unknown_mfr` | Valid serial, manufacturer code not in the table |
-| `unverified` | `id_type` says serial but the string isn't valid CTA-2063-A (a non-compliance / spoof signal) |
+| `doc` | Make + model, from a matched DoC serial prefix |
+| `prefix` | Make only (a prefix with no model recorded) |
+| `unknown_mfr` | No prefix match, but the serial is valid CTA-2063-A |
+| `unverified` | No prefix match and the serial isn't valid CTA-2063-A (a non-compliance / spoof signal) |
 | `na` | Not a serial ID (e.g. CAA registration) — nothing to decode |
 
-Model-level resolution comes from the **FAA Declaration of Compliance (DoC)** list. A small verified seed (`aegis-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve offline immediately. To expand coverage, set the DoC source URL in **System → Settings** (`rid_doc_source_url`) and click **Refresh now** in that panel, or run it from the server:
+A matched prefix wins over strict CTA-2063-A validity, since some real products ship serials the standard would reject; validity is still tracked separately for the spoof signal.
+
+A small verified seed (`aegis-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve immediately. To build full coverage, click **Rebuild from FAA** in **System → Settings → Remote ID** (or run it from the server). The server scrapes the FAA DoC API set in `rid_doc_source_url` (default `https://uasdoc.faa.gov/api/v1`): it pages the filing list, pulls each filing's serial snapshot, extracts the prefixes, and loads `prefix → make/model`. It runs in the background with live progress.
 
 ```bash
-bash scripts/update-doc-list.sh                       # pull from the configured URL
-bash scripts/update-doc-list.sh --url <DOC_CSV_URL>   # pull from a specific URL
-bash scripts/update-doc-list.sh --file faa_doc.csv    # import a local CSV (air-gapped)
+bash scripts/update-doc-list.sh                         # scrape the configured FAA API root
+bash scripts/update-doc-list.sh --url <FAA_API_ROOT>    # scrape a specific root
+bash scripts/update-doc-list.sh --file prefixes.csv     # import a CSV (serial_prefix,manufacturer,model) — air-gapped
 ```
 
-The reference table lives in the database (covered by PBS backups) and persists across container rebuilds. Refresh needs outbound HTTPS from the server; an air-gapped box uses the seed plus `--file` imports. A monthly cron/systemd timer is a reasonable cadence since the list changes slowly.
+The reference table lives in the database (covered by PBS backups) and persists across container rebuilds. The scrape needs outbound HTTPS from the server; an air-gapped box uses the seed plus a `--file` CSV import. A monthly cron/systemd timer is a reasonable cadence since the list changes slowly.
 
 ---
 

@@ -1,72 +1,77 @@
 """
 analysis/rid_identity.py
 ========================
-Resolve a broadcast Remote ID serial to a drone make (and model when known).
+Resolve a broadcast Remote ID serial to a drone make and model.
 
-A compliant Remote ID serial follows ANSI/CTA-2063-A:
+How matching works
+------------------
+The FAA Declaration of Compliance (DoC) system publishes, for every filing, the
+full list of serial numbers that product ships with. Within a filing the serials
+share a model-specific prefix — e.g. every Skydio "X10 with Parachute" serial is
+`X10PCH` + 4 characters. So a broadcast serial is resolved by **longest-prefix
+match** against those prefixes: the longest known prefix the serial starts with
+gives the make and model. This is the same method community receivers use, and
+it reaches model level, not just manufacturer.
 
-    [4-char manufacturer code][1-char length code][manufacturer serial]
+The reference table (prefix → make/model) is built by scraping the FAA DoC API
+(see rebuild_from_faa). A small verified seed ships in data/rid_identity_seed.json
+and loads on first boot so common drones resolve before the first scrape.
 
-  - Manufacturer code: 4 alphanumeric chars, excluding I and O. Assigned per
-    manufacturer (e.g. DJI = "1581").
-  - Length code: one hex char 1..F giving the length of the trailing section.
-  - Manufacturer serial: that many alphanumeric chars, excluding I and O.
+Graded id_source tells the UI how confident the result is:
 
-So the make is derivable from the first 4 chars offline, with zero network.
-Model needs a reference table (the FAA Declaration of Compliance list), matched
-by a serial prefix that pins a specific product.
-
-Enrichment runs server-side at ingest (see mqtt/subscriber.py) and stamps the
-drone track with make / model / mfr_code / id_source. The graded `id_source`
-tells the UI how confident the result is:
-
-    doc          make + model, matched against the reference table
-    prefix       make only, from the manufacturer code (model unknown)
-    unknown_mfr  valid serial, manufacturer code not in the table
-    unverified   id_type says serial but the string isn't valid CTA-2063-A
+    doc          make + model, from a matched DoC serial prefix
+    prefix       make only (a prefix with no model recorded)
+    unknown_mfr  no prefix match, but the serial is valid CTA-2063-A
+    unverified   no prefix match and the serial isn't valid CTA-2063-A
                  (a non-compliance / spoof signal)
-    na           id_type isn't a serial (CAA registration, etc.) — nothing to decode
+    na           id_type isn't a serial (CAA registration, etc.)
+
+A DoC-prefix match wins over strict CTA-2063-A validity: some real products use
+serials the standard would reject (the FAA marks them NO_FORMAT), so a known
+serial is identified even when it isn't CTA-compliant. Validity is still tracked
+separately as serial_valid for the spoof signal.
 
 The reference table lives in the `rid_identity` DB table (persists in the
-TimescaleDB volume, so PBS backups cover it) with an in-memory cache rebuilt on
-load and after a refresh. A small verified seed ships in data/rid_identity_seed.json
-and is loaded on first boot when the table is empty.
+TimescaleDB volume) with an in-memory prefix index rebuilt on load and refresh.
 """
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import json
 import logging
+import time
 from pathlib import Path
 
 from db.database import get_pool
 
 log = logging.getLogger("rid-identity")
 
-# Allowed serial characters: digits + uppercase letters, excluding I and O.
+# Allowed CTA-2063-A serial characters: digits + uppercase letters, excluding I and O.
 _ALLOWED = set("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ")
 _HEX_LEN = set("123456789ABCDEF")   # length code is 1..F (never 0)
 
 SEED_PATH = Path(__file__).resolve().parent.parent / "data" / "rid_identity_seed.json"
 
+# Shortest prefix we'll trust from a scrape. Below this a prefix is too generic
+# and risks matching unrelated drones.
+MIN_PREFIX_LEN = 4
+
 
 # ────────────────────────────────────────────────────────────────────────────
-# CTA-2063-A structural parse
+# CTA-2063-A structural parse (used only for the spoof / validity signal)
 # ────────────────────────────────────────────────────────────────────────────
 
 def parse_cta2063a(serial: str) -> dict:
-    """
-    Validate a CTA-2063-A serial and pull out its parts. Returns a dict with
-    `valid` (bool), `mfr_code` (first 4 chars when present, for triage even on
-    invalid input), and on success `length` and `body`.
-    """
+    """Validate a CTA-2063-A serial and pull out its parts. Returns `valid`
+    (bool) and `mfr_code` (first 4 chars when present, for display even on
+    invalid input)."""
     if not serial:
         return {"valid": False, "mfr_code": None}
     s = serial.strip().upper()
     mfr_code = s[:4] if len(s) >= 4 else None
-    # Total length is 5 (code + length char) + N body chars, N in 1..15.
     if len(s) < 6 or len(s) > 20:
         return {"valid": False, "mfr_code": mfr_code}
     mfr, length_char, body = s[:4], s[4], s[5:]
@@ -82,54 +87,58 @@ def parse_cta2063a(serial: str) -> dict:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# In-memory index
+# Prefix index — longest-prefix match over DoC serial prefixes
 # ────────────────────────────────────────────────────────────────────────────
 
-class IdentityIndex:
-    """Make/model lookup keyed by manufacturer code, with optional per-model
-    serial-prefix matching. Small (hundreds of rows), held in memory."""
+class PrefixIndex:
+    """Maps a serial prefix to (make, model). Matches a serial to the longest
+    prefix it starts with. Small (a few thousand prefixes), held in memory."""
 
     def __init__(self):
-        self.mfr: dict[str, str] = {}          # mfr_code -> manufacturer
-        self.models: dict[str, list] = {}      # mfr_code -> [(serial_prefix, model), ...]
+        self.entries: list[tuple[str, str | None, str | None]] = []
+        self._sorted = True
 
     def clear(self):
-        self.mfr.clear()
-        self.models.clear()
+        self.entries = []
+        self._sorted = True
 
-    def add(self, mfr_code, manufacturer=None, model=None, serial_prefix=None):
-        mfr_code = (mfr_code or "").strip().upper()
-        if not mfr_code:
+    def add(self, prefix, manufacturer=None, model=None):
+        prefix = (prefix or "").strip().upper()
+        if not prefix:
             return
-        if manufacturer:
-            self.mfr[mfr_code] = manufacturer.strip()
-        if model:
-            prefix = (serial_prefix or mfr_code).strip().upper()
-            bucket = self.models.setdefault(mfr_code, [])
-            bucket.append((prefix, model.strip()))
-            # Longest prefix first so the most specific model wins.
-            bucket.sort(key=lambda t: len(t[0]), reverse=True)
+        self.entries.append((prefix, (manufacturer or None), (model or None)))
+        self._sorted = False
 
-    def lookup(self, serial: str, mfr_code: str):
-        make = self.mfr.get(mfr_code)
-        model = None
+    def _ensure_sorted(self):
+        if not self._sorted:
+            # Longest prefix first so the most specific match wins.
+            self.entries.sort(key=lambda e: len(e[0]), reverse=True)
+            self._sorted = True
+
+    def match(self, serial: str):
         s = (serial or "").upper()
-        for prefix, m in self.models.get(mfr_code, []):
+        if not s:
+            return None, None, None
+        self._ensure_sorted()
+        for prefix, make, model in self.entries:
             if s.startswith(prefix):
-                model = m
-                break
-        return make, model
+                return make, model, prefix
+        return None, None, None
 
     @property
-    def manufacturer_count(self) -> int:
-        return len(self.mfr)
+    def prefix_count(self) -> int:
+        return len(self.entries)
+
+    @property
+    def make_count(self) -> int:
+        return len({m for _, m, _ in self.entries if m})
 
     @property
     def model_count(self) -> int:
-        return sum(len(v) for v in self.models.values())
+        return len({(m, md) for _, m, md in self.entries if md})
 
 
-_index = IdentityIndex()
+_index = PrefixIndex()
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -142,26 +151,61 @@ def enrich(id_type: str, serial: str) -> dict:
     out = {"make": None, "model": None, "mfr_code": None,
            "id_source": "na", "serial_valid": None}
 
-    # Only serial-type IDs follow CTA-2063-A. CAA registration IDs and unknown
-    # types don't encode a manufacturer, so there's nothing to decode.
     if (id_type or "").strip().lower() != "serial_number":
-        return out
+        return out  # CAA registration / unknown — nothing to decode
 
     parsed = parse_cta2063a(serial)
     out["mfr_code"] = parsed.get("mfr_code")
-    if not parsed["valid"]:
-        out["id_source"] = "unverified"
-        out["serial_valid"] = False
-        return out
+    out["serial_valid"] = parsed["valid"]
 
-    out["serial_valid"] = True
-    make, model = _index.lookup(serial, parsed["mfr_code"])
+    make, model, _prefix = _index.match(serial)
     if make and model:
         out.update(make=make, model=model, id_source="doc")
     elif make:
         out.update(make=make, id_source="prefix")
+    elif parsed["valid"]:
+        out["id_source"] = "unknown_mfr"   # valid serial we just don't have on file
     else:
-        out["id_source"] = "unknown_mfr"
+        out["id_source"] = "unverified"    # malformed serial + unknown = spoof signal
+    return out
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Prefix extraction (from a filing's serial list)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _common_prefix(strings: list[str]) -> str:
+    if not strings:
+        return ""
+    lo, hi = min(strings), max(strings)
+    i = 0
+    while i < len(lo) and i < len(hi) and lo[i] == hi[i]:
+        i += 1
+    return lo[:i]
+
+
+def extract_prefixes(values: list[str], min_len: int = MIN_PREFIX_LEN) -> list[str]:
+    """Derive the model-identifying prefix(es) from a filing's serial sample.
+
+    Most filings share one prefix (one product), so the longest common prefix
+    of the sample is it. When a filing mixes series (short common prefix), fall
+    back to bucketing by the first `min_len` chars and taking each bucket's
+    common prefix, so we still emit usable, specific prefixes."""
+    vals = sorted({v.strip().upper() for v in values if v and v.strip()})
+    if not vals:
+        return []
+    lcp = _common_prefix(vals)
+    if len(lcp) >= min_len:
+        return [lcp]
+    buckets: dict[str, list[str]] = {}
+    for v in vals:
+        if len(v) >= min_len:
+            buckets.setdefault(v[:min_len], []).append(v)
+    out = []
+    for b in buckets.values():
+        p = _common_prefix(b)
+        if len(p) >= min_len:
+            out.append(p)
     return out
 
 
@@ -170,18 +214,19 @@ def enrich(id_type: str, serial: str) -> dict:
 # ────────────────────────────────────────────────────────────────────────────
 
 async def load_index() -> None:
-    """Rebuild the in-memory index from the DB reference table."""
+    """Rebuild the in-memory prefix index from the DB reference table."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT mfr_code, manufacturer, model, serial_prefix FROM rid_identity"
+            "SELECT serial_prefix, manufacturer, model FROM rid_identity "
+            "WHERE serial_prefix IS NOT NULL"
         )
     _index.clear()
     for r in rows:
-        _index.add(r["mfr_code"], r["manufacturer"], r["model"], r["serial_prefix"])
+        _index.add(r["serial_prefix"], r["manufacturer"], r["model"])
     log.info(
-        "RID identity index: %d manufacturers, %d models",
-        _index.manufacturer_count, _index.model_count,
+        "RID identity index: %d prefixes, %d makes, %d models",
+        _index.prefix_count, _index.make_count, _index.model_count,
     )
 
 
@@ -191,17 +236,17 @@ async def _replace_rows(conn, entries: list[dict], source: str) -> int:
     async with conn.transaction():
         await conn.execute("DELETE FROM rid_identity")
         for e in entries:
-            mfr_code = (e.get("mfr_code") or "").strip().upper()
+            prefix = (e.get("serial_prefix") or e.get("mfr_code") or "").strip().upper()
             manufacturer = (e.get("manufacturer") or "").strip() or None
-            if not mfr_code and not manufacturer:
+            if not prefix:
                 continue
             await conn.execute(
                 """INSERT INTO rid_identity (mfr_code, manufacturer, model, serial_prefix)
                    VALUES ($1, $2, $3, $4)""",
-                mfr_code or None,
+                prefix[:4],
                 manufacturer,
                 (e.get("model") or "").strip() or None,
-                (e.get("serial_prefix") or "").strip().upper() or None,
+                prefix,
             )
             count += 1
         await conn.execute(
@@ -231,57 +276,7 @@ async def seed_if_empty() -> None:
     await load_index()
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Import / refresh
-# ────────────────────────────────────────────────────────────────────────────
-
-# Flexible column-name matching for the FAA DoC export (and hand-made CSVs).
-_COL_ALIASES = {
-    "mfr_code":      ["mfr_code", "manufacturer_code", "manufacturer code", "cta_code", "code"],
-    "manufacturer":  ["manufacturer", "make", "mfr", "company", "brand"],
-    "model":         ["model", "model/series", "model series", "product", "product name", "uas_model"],
-    "serial_prefix": ["serial_prefix", "serial prefix", "serial", "serial_number", "serial number"],
-}
-
-
-def _pick(row: dict, keys: list[str]):
-    norm = {k.strip().lower(): v for k, v in row.items() if k}
-    for cand in keys:
-        if cand in norm and str(norm[cand]).strip():
-            return str(norm[cand]).strip()
-    return None
-
-
-def normalize_rows(rows: list[dict]) -> list[dict]:
-    """Map arbitrary FAA/CSV rows onto our entry schema, tolerant of column
-    naming. Rows without at least a manufacturer or mfr_code are dropped."""
-    out = []
-    for row in rows:
-        entry = {
-            "mfr_code":      _pick(row, _COL_ALIASES["mfr_code"]),
-            "manufacturer":  _pick(row, _COL_ALIASES["manufacturer"]),
-            "model":         _pick(row, _COL_ALIASES["model"]),
-            "serial_prefix": _pick(row, _COL_ALIASES["serial_prefix"]),
-        }
-        # If a full serial came through as the prefix, keep only its 4-char code
-        # as the key when no explicit code column was present.
-        if not entry["mfr_code"] and entry["serial_prefix"]:
-            sp = entry["serial_prefix"].upper()
-            if len(sp) >= 4:
-                entry["mfr_code"] = sp[:4]
-        if entry["manufacturer"] or entry["mfr_code"]:
-            out.append(entry)
-    return out
-
-
-def parse_csv(text: str) -> list[dict]:
-    """Parse CSV text into normalized entries."""
-    reader = csv.DictReader(io.StringIO(text))
-    return normalize_rows(list(reader))
-
-
 async def import_entries(entries: list[dict], source: str) -> int:
-    """Replace the reference table with normalized entries and reload the index."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         count = await _replace_rows(conn, entries, source=source)
@@ -289,42 +284,169 @@ async def import_entries(entries: list[dict], source: str) -> int:
     return count
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# CSV import (manual / air-gapped path)
+# ────────────────────────────────────────────────────────────────────────────
+
+_COL_ALIASES = {
+    "serial_prefix": ["serial_prefix", "serial prefix", "prefix", "serial", "serial_number", "serial number"],
+    "manufacturer":  ["manufacturer", "make", "makename", "mfr", "company", "brand"],
+    "model":         ["model", "modelname", "model/series", "model series", "product"],
+}
+
+
+def _pick(row: dict, keys: list[str]):
+    norm = {str(k).strip().lower(): v for k, v in row.items() if k}
+    for cand in keys:
+        if cand in norm and str(norm[cand]).strip():
+            return str(norm[cand]).strip()
+    return None
+
+
+def normalize_rows(rows: list[dict]) -> list[dict]:
+    out = []
+    for row in rows:
+        entry = {
+            "serial_prefix": _pick(row, _COL_ALIASES["serial_prefix"]),
+            "manufacturer":  _pick(row, _COL_ALIASES["manufacturer"]),
+            "model":         _pick(row, _COL_ALIASES["model"]),
+        }
+        if entry["serial_prefix"]:
+            out.append(entry)
+    return out
+
+
+def parse_csv(text: str) -> list[dict]:
+    return normalize_rows(list(csv.DictReader(io.StringIO(text))))
+
+
 async def import_csv_text(text: str, source: str = "import") -> int:
     return await import_entries(parse_csv(text), source=source)
 
 
-async def refresh_from_url(url: str, timeout_s: float = 30.0) -> int:
-    """Download the FAA DoC list (or any CSV) from `url` and import it. Runs on
-    the server, which has outbound network; raises on fetch/parse failure so the
-    caller can report it."""
-    import httpx  # local import: only needed on refresh, keeps import graph light
+# ────────────────────────────────────────────────────────────────────────────
+# FAA DoC scrape — build the prefix table from uasdoc.faa.gov
+# ────────────────────────────────────────────────────────────────────────────
 
-    async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        body = resp.text
-    # Accept JSON ({"entries":[...]} or a bare list) or CSV.
-    stripped = body.lstrip()
-    if stripped.startswith("{") or stripped.startswith("["):
-        data = json.loads(body)
-        rows = data.get("entries", data) if isinstance(data, dict) else data
-        entries = normalize_rows(rows)
-    else:
-        entries = parse_csv(body)
-    return await import_entries(entries, source="faa-doc")
+# Progress state for the System panel while a rebuild runs.
+_build_state: dict = {
+    "building": False, "done": 0, "total": 0,
+    "prefixes": 0, "error": None, "started_at": None,
+}
+
+
+def build_state() -> dict:
+    return dict(_build_state)
+
+
+def _faa_items(payload: dict) -> list[dict]:
+    """Both FAA endpoints wrap rows in {"data": {"items": [...]}}."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, dict) and isinstance(data.get("items"), list):
+        return data["items"]
+    if isinstance(payload, list):
+        return payload
+    return []
+
+
+async def rebuild_from_faa(base_url: str, page_size: int = 100,
+                           delay_s: float = 0.1) -> int:
+    """
+    Scrape the FAA DoC API and rebuild the prefix table. Runs in-process on the
+    server (which has outbound network). Pages the filing list, fetches each
+    filing's serial snapshot, extracts the model prefix(es), and imports
+    (prefix → make, model). Returns the number of prefixes stored.
+
+    base_url is the API root, e.g. "https://uasdoc.faa.gov/api/v1".
+    """
+    import httpx
+
+    base = base_url.rstrip("/")
+    prefix_map: dict[str, dict] = {}   # prefix -> {manufacturer, model}
+    _build_state.update(building=True, done=0, total=0, prefixes=0,
+                        error=None, started_at=time.time())
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            # 1. Page the filing list.
+            filings: list[dict] = []
+            page = 0
+            while True:
+                r = await client.get(f"{base}/publicDOCRev",
+                                     params={"itemsPerPage": page_size, "pageIndex": page})
+                r.raise_for_status()
+                body = r.json()
+                items = _faa_items(body)
+                if not items:
+                    break
+                filings.extend(items)
+                total = (body.get("data") or {}).get("totalItems")
+                page += 1
+                if total and len(filings) >= int(total):
+                    break
+                if page > 1000:   # safety valve
+                    break
+                await asyncio.sleep(delay_s)
+
+            _build_state["total"] = len(filings)
+
+            # 2. Per filing, fetch the serial snapshot and extract prefix(es).
+            for f in filings:
+                tracking = f.get("trackingNumber") or f.get("docTrackingNumber")
+                make = (f.get("makeName") or f.get("manufacturer") or "").strip() or None
+                model = (f.get("modelName") or f.get("model") or "").strip() or None
+                if tracking:
+                    try:
+                        sr = await client.get(f"{base}/serialNumbers", params={
+                            "snapshot": "true", "isPublic": "true",
+                            "findBy": "docTrackingNumber",
+                            "docTrackingNumber": tracking,
+                            "formatForDocView": "true",
+                        })
+                        sr.raise_for_status()
+                        values = [it.get("value") for it in _faa_items(sr.json())
+                                  if it.get("value")]
+                        for p in extract_prefixes(values):
+                            # First writer wins, but fill in a model if a later
+                            # filing has one for the same prefix.
+                            cur = prefix_map.get(p)
+                            if cur is None:
+                                prefix_map[p] = {"manufacturer": make, "model": model}
+                            elif not cur.get("model") and model:
+                                cur["model"] = model
+                    except Exception as e:
+                        log.warning("serials fetch failed for %s: %s", tracking, e)
+                _build_state["done"] += 1
+                _build_state["prefixes"] = len(prefix_map)
+                await asyncio.sleep(delay_s)
+
+        entries = [{"serial_prefix": p, "manufacturer": v["manufacturer"], "model": v["model"]}
+                   for p, v in prefix_map.items()]
+        if not entries:
+            raise RuntimeError("No serial prefixes extracted — check the source URL/API shape.")
+        count = await import_entries(entries, source="faa-doc")
+        _build_state.update(prefixes=count)
+        return count
+    except Exception as e:
+        _build_state["error"] = str(e)
+        log.warning("RID identity rebuild failed: %s", e)
+        raise
+    finally:
+        _build_state["building"] = False
 
 
 async def get_status() -> dict:
-    """Current reference-table status for the System panel."""
+    """Reference-table status + any in-progress build, for the System panel."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         meta = await conn.fetchrow(
             "SELECT last_refreshed, source, entry_count FROM rid_identity_meta WHERE id = 1"
         )
     return {
-        "manufacturers": _index.manufacturer_count,
+        "prefixes": _index.prefix_count,
+        "makes": _index.make_count,
         "models": _index.model_count,
         "entry_count": (meta["entry_count"] if meta else 0),
         "source": (meta["source"] if meta else None),
         "last_refreshed": (meta["last_refreshed"].isoformat() if meta and meta["last_refreshed"] else None),
+        "build": build_state(),
     }

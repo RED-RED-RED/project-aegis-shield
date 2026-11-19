@@ -27,19 +27,28 @@ export default function SettingsPanel() {
   }
   useEffect(() => { load(); loadRid() }, [])
 
-  async function refreshRid() {
-    setRidBusy(true); setRidMsg('Refreshing from FAA DoC list…')
+  async function rebuildRid() {
+    setRidBusy(true); setRidMsg('Starting FAA scrape…')
     try {
-      const r = await fetch('/api/system/rid-identity/refresh', { method: 'POST' })
+      const r = await fetch('/api/system/rid-identity/rebuild', { method: 'POST' })
       const j = await r.json()
-      if (j.ok) {
-        setRidMsg(`✓ Updated — ${j.manufacturers} makes, ${j.models} models`)
-        setRid(j)
-      } else {
-        setRidMsg(`✗ ${j.error || 'refresh failed'}`)
-      }
-    } catch { setRidMsg('✗ request failed') }
-    setRidBusy(false)
+      if (!j.ok) { setRidMsg(`✗ ${j.error || 'could not start'}`); setRidBusy(false); return }
+      // Poll progress until the build finishes.
+      const poll = setInterval(async () => {
+        try {
+          const s = await (await fetch('/api/system/rid-identity')).json()
+          setRid(s)
+          const b = s.build || {}
+          if (b.building) {
+            setRidMsg(`Scraping FAA… ${b.done}/${b.total} filings, ${b.prefixes} prefixes`)
+          } else {
+            clearInterval(poll); setRidBusy(false)
+            setRidMsg(b.error ? `✗ ${b.error}`
+              : `✓ Built — ${s.makes} makes, ${s.models} models, ${s.prefixes} prefixes`)
+          }
+        } catch { /* keep polling */ }
+      }, 1500)
+    } catch { setRidMsg('✗ request failed'); setRidBusy(false) }
   }
 
   const groups = useMemo(() => {
@@ -89,8 +98,8 @@ export default function SettingsPanel() {
               <button className="st-test" onClick={sendTest}>Send test push</button>
             )}
             {group === 'Remote ID' && (
-              <button className="st-test" onClick={refreshRid} disabled={ridBusy}>
-                {ridBusy ? 'Refreshing…' : 'Refresh now'}
+              <button className="st-test" onClick={rebuildRid} disabled={ridBusy}>
+                {ridBusy ? 'Building…' : 'Rebuild from FAA'}
               </button>
             )}
           </div>
@@ -98,9 +107,9 @@ export default function SettingsPanel() {
           {group === 'Remote ID' && (
             <div className="st-testmsg">
               {rid
-                ? `Reference: ${rid.manufacturers} makes, ${rid.models} models${
+                ? `Reference: ${rid.makes} makes, ${rid.models} models, ${rid.prefixes} prefixes${
                     rid.source ? ` · source: ${rid.source}` : ''}${
-                    rid.last_refreshed ? ` · updated ${new Date(rid.last_refreshed).toLocaleString()}` : ' · not yet refreshed'}`
+                    rid.last_refreshed ? ` · built ${new Date(rid.last_refreshed).toLocaleString()}` : ' · not yet built'}`
                 : 'Reference status unavailable'}
               {ridMsg && <div>{ridMsg}</div>}
             </div>
