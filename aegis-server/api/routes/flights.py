@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from core.config import get_settings
 from db.database import get_pool
 from analysis import flights as F
+from analysis import rid_identity
 
 log = logging.getLogger("flights-route")
 router = APIRouter()
@@ -37,11 +38,21 @@ async def _threat_map(conn, drone_ids: set[str]) -> dict:
     if not drone_ids:
         return {}
     rows = await conn.fetch("""
-        SELECT drone_id, has_valid_rid, threat_score, threat_level,
-               make, model, id_source
+        SELECT drone_id, has_valid_rid, threat_score, threat_level, id_type
         FROM drone_tracks WHERE drone_id = ANY($1::text[])
     """, list(drone_ids))
-    return {r["drone_id"]: dict(r) for r in rows}
+    out = {}
+    for r in rows:
+        d = dict(r)
+        # Resolve make/model from the serial against the CURRENT reference, so
+        # historical flights re-match after a reference rebuild rather than
+        # being stuck with whatever was stored when the drone was last seen.
+        ident = rid_identity.enrich(d.get("id_type"), d["drone_id"])
+        d["make"] = ident["make"]
+        d["model"] = ident["model"]
+        d["id_source"] = ident["id_source"]
+        out[d["drone_id"]] = d
+    return out
 
 
 @router.get("")

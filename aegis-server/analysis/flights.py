@@ -150,7 +150,14 @@ def _xml_escape(v) -> str:
 
 
 def to_csv(d: dict) -> str:
-    lines = ["time,lat,lon,alt_m,agl_m,speed_ms,heading_deg,rssi_dbm,node"]
+    # Identity metadata as comment lines, so an exported track says which drone
+    # it was (and how confidently it was identified) for historical matching.
+    ident = " ".join(x for x in [d.get("make"), d.get("model")] if x) or "unidentified"
+    lines = [
+        f"# drone_id: {d.get('drone_id', '')}",
+        f"# identity: {ident} (source: {d.get('id_source') or 'na'})",
+        "time,lat,lon,alt_m,agl_m,speed_ms,heading_deg,rssi_dbm,node",
+    ]
     for p in d["path"]:
         if p["lat"] is None or p["lon"] is None:
             continue

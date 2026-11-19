@@ -66,5 +66,9 @@ def test_exports_contain_coordinates():
     gpx = F.to_gpx(d); kml = F.to_kml(d); csv = F.to_csv(d)
     assert "<trkpt" in gpx and "41.0" in gpx
     assert "<LineString>" in kml and "-96.0,41.0" in kml
-    assert csv.splitlines()[0].startswith("time,lat,lon")
-    assert len(csv.strip().splitlines()) == 3   # header + 2 points
+    csv_lines = csv.strip().splitlines()
+    # Two identity comment lines, then the column header, then 2 points.
+    assert csv_lines[0].startswith("# drone_id:")
+    header = next(l for l in csv_lines if l.startswith("time,lat,lon"))
+    assert header
+    assert len([l for l in csv_lines if not l.startswith("#")]) == 3  # header + 2 points

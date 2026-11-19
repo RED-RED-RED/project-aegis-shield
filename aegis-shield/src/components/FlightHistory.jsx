@@ -53,6 +53,7 @@ export default function FlightHistory() {
   const [compliant, setCompliant] = useState('all')
   const [node, setNode]           = useState('')
   const [minThreat, setMinThreat] = useState('all')
+  const [q, setQ]                 = useState('')
   const [flights, setFlights]     = useState([])
   const [rf, setRf]               = useState([])
   const [selId, setSelId]         = useState(null)
@@ -163,7 +164,14 @@ export default function FlightHistory() {
     return () => clearInterval(playTimer.current)
   }, [playing, detail])
 
-  const recentCount = flights.filter(f => ago(f.end) < 3600).length
+  // Client-side make/model/serial search over the loaded flights.
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return flights
+    return flights.filter(f =>
+      [f.make, f.model, f.drone_id].filter(Boolean).join(' ').toLowerCase().includes(needle))
+  }, [flights, q])
+  const recentCount = shown.filter(f => ago(f.end) < 3600).length
   const cur = detail?.path?.[idx]
 
   return (
@@ -188,12 +196,16 @@ export default function FlightHistory() {
               {THREATS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </div>
+          <div className="fh-frow">
+            <input className="fh-search" type="text" value={q} placeholder="Search make / model / serial…"
+                   onChange={e => setQ(e.target.value)} />
+          </div>
         </div>
 
-        <div className="fh-listhead">Flights ({flights.length}){recentCount > 0 && <span className="fh-recent"> · {recentCount} ended &lt;1h</span>}</div>
+        <div className="fh-listhead">Flights ({shown.length}{q.trim() && flights.length !== shown.length ? ` of ${flights.length}` : ''}){recentCount > 0 && <span className="fh-recent"> · {recentCount} ended &lt;1h</span>}</div>
         <div className="fh-list">
-          {flights.length === 0 && <div className="fh-empty">No flights in range.</div>}
-          {flights.map(f => (
+          {shown.length === 0 && <div className="fh-empty">{flights.length === 0 ? 'No flights in range.' : 'No flights match your search.'}</div>}
+          {shown.map(f => (
             <div key={f.flight_id} className={`fh-item ${selId === f.flight_id ? 'sel' : ''}`} onClick={() => setSelId(f.flight_id)}>
               <div className="fh-item-top">
                 <span className="fh-item-id">{f.drone_id}</span>
@@ -282,6 +294,9 @@ const css = `
 .fh-chip.on { color:var(--text); border-color:var(--steel-blue); background:var(--bg2); }
 .fh-sel { flex:1; background:var(--bg1); border:1px solid var(--bg-border); color:var(--text);
   font-family:var(--mono); font-size:11px; padding:3px 6px; border-radius:3px; }
+.fh-search { flex:1; width:100%; background:var(--bg1); border:1px solid var(--bg-border); color:var(--text);
+  font-family:var(--mono); font-size:11px; padding:3px 6px; border-radius:3px; }
+.fh-search::placeholder { color:var(--muted); }
 .fh-listhead { padding:7px 10px; font-family:'Barlow Condensed',sans-serif; text-transform:uppercase;
   font-size:12px; letter-spacing:0.05em; color:var(--text-secondary); background:var(--bg1); border-bottom:1px solid var(--bg-border); }
 .fh-recent { color:var(--threat-med); }
