@@ -90,6 +90,30 @@ function droneIcon(drone, imperial = false) {
   return L.divIcon({ html, className:'', iconSize:[12,28], iconAnchor:[6,22], popupAnchor:[0,-26] })
 }
 
+// ── Operator (pilot) marker ────────────────────────────────────────────────
+// The ground position the drone broadcasts for its operator. Distinct from the
+// drone marker: a steel-blue pin with a person glyph.
+function operatorIcon() {
+  const c = colors.steelBlueLight
+  const html = `<div style="display:flex;flex-direction:column;align-items:center;">
+    <div style="width:18px;height:18px;border-radius:50%;background:${colors.bgElevated};
+      border:2px solid ${c};display:flex;align-items:center;justify-content:center;
+      box-shadow:0 0 6px ${c}80;font-size:11px;line-height:1;">👤</div>
+    <div style="width:2px;height:6px;background:${c};"></div>
+  </div>`
+  return L.divIcon({ html, className:'', iconSize:[18,24], iconAnchor:[9,24], popupAnchor:[0,-24] })
+}
+
+function operatorPopupHtml(drone, imperial = false) {
+  return `<div style="font-family:var(--mono,monospace);font-size:11px;min-width:150px;">
+    <div style="font-weight:bold;letter-spacing:1px;color:${colors.steelBlueLight};text-transform:uppercase;">Operator</div>
+    <div style="color:${colors.textMuted};margin-bottom:3px;">pilot / ground station</div>
+    <div><span style="color:${colors.textMuted}">DRONE </span>${drone.drone_id}</div>
+    <div><span style="color:${colors.textMuted}">OP ID </span>${drone.operator_id || '—'}</div>
+    <div><span style="color:${colors.textMuted}">POS   </span>${drone.operator_lat.toFixed(5)}, ${drone.operator_lon.toFixed(5)}</div>
+  </div>`
+}
+
 // ── MLAT marker ────────────────────────────────────────────────────────────
 function mlatIcon(spoof) {
   const color = spoof > 0.7 ? colors.threatHigh : spoof > 0.4 ? colors.threatMed : colors.steelBlueLight
@@ -201,6 +225,8 @@ export default function MapView() {
   const trackPtsRef = useRef({})
   const rfMarkRef   = useRef({})
   const rfCircRef   = useRef({})
+  const opMarkRef   = useRef({})
+  const opLineRef   = useRef({})
 
   const drones      = useStore(selectActiveDrones)
   const nodes       = useStore(selectAllNodes)
@@ -251,7 +277,7 @@ export default function MapView() {
 
     for (const id of Object.keys(markersRef.current)) {
       if (!live.has(id)) {
-        for (const r of [markersRef, mlatMarkRef, mlatCircRef, mlatLineRef, tracksRef]) {
+        for (const r of [markersRef, mlatMarkRef, mlatCircRef, mlatLineRef, tracksRef, opMarkRef, opLineRef]) {
           if (r.current[id]) { map.removeLayer(r.current[id]); delete r.current[id] }
         }
         delete trackPtsRef.current[id]
@@ -295,6 +321,38 @@ export default function MapView() {
       if (tracksRef.current[id]) tracksRef.current[id].setStyle({ opacity: stale ? 0.25 : 1 })
       if (markersRef.current[id].isPopupOpen()) {
         markersRef.current[id].setPopupContent(dronePopupHtml(drone, imperial))
+      }
+
+      // Operator (pilot) position, when the drone broadcasts it
+      const hasOp = drone.operator_lat != null && drone.operator_lon != null &&
+                    !(drone.operator_lat === 0 && drone.operator_lon === 0)
+      if (hasOp) {
+        const oll = [drone.operator_lat, drone.operator_lon]
+        if (opMarkRef.current[id]) {
+          opMarkRef.current[id].setLatLng(oll)
+        } else {
+          opMarkRef.current[id] = L.marker(oll, { icon:operatorIcon(), zIndexOffset:8 })
+            .bindPopup(operatorPopupHtml(drone, imperial), { maxWidth:240 })
+            .on('click', () => selectDrone(id))
+            .addTo(map)
+        }
+        opMarkRef.current[id].setOpacity(op)
+        if (opMarkRef.current[id].isPopupOpen()) {
+          opMarkRef.current[id].setPopupContent(operatorPopupHtml(drone, imperial))
+        }
+        // Tether line drone -> operator
+        if (opLineRef.current[id]) {
+          opLineRef.current[id].setLatLngs([ll, oll])
+        } else {
+          opLineRef.current[id] = L.polyline([ll, oll], {
+            color:colors.steelBlueLight, weight:1, dashArray:'3 4', opacity:0.6
+          }).addTo(map)
+        }
+        opLineRef.current[id].setStyle({ opacity: stale ? 0.2 : 0.6 })
+      } else {
+        for (const r of [opMarkRef, opLineRef]) {
+          if (r.current[id]) { map.removeLayer(r.current[id]); delete r.current[id] }
+        }
       }
 
       // MLAT overlays
