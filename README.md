@@ -1,23 +1,24 @@
-# AEGIS Platform
+# KESTREL
 
-> **A**irspace **E**nforcement and **G**round **I**ntelligence **S**ystem  
 > Multi-node Remote ID detection, threat scoring, and MLAT position estimation
+>
+> _Formerly AEGIS. Internal service, directory, topic, and env-var names still carry the original `aegis-`/`argus-` identifiers and migrate in a later step._
 
 ```
                     ┌──────────────────────────────────────────┐
-                    │          AEGIS SHIELD (UI)               │
+                    │          KESTREL (UI)               │
                     │  Live map · Threat scores · MLAT circles │
                     │  Packet feed · Node health · Alert feed  │
                     └──────────────────┬───────────────────────┘
                                        │ WebSocket /ws
                     ┌──────────────────▼───────────────────────┐
-                    │            AEGIS SERVER                  │
+                    │            KESTREL SERVER                  │
                     │  FastAPI · TimescaleDB · MQTT broker     │
                     │  Alert engine · Trilateration · Threat AI│
                     └──────┬───────────────┬───────────────┬───┘
                            │ MQTT          │ MQTT          │ MQTT
                     ┌──────▼─────┐  ┌──────▼─────┐  ┌──────▼─────┐
-                    │  ARGUS-01  │  │  ARGUS-02  │  │  ARGUS-03  │
+                    │  KN-01  │  │  KN-02  │  │  KN-03  │
                     │  Wi-Fi NAN │  │  Wi-Fi NAN │  │  Wi-Fi NAN │
                     │  BT5 LR    │  │  BT5 LR    │  │  BT5 LR    │
                     │  RTL-SDR   │  │  GPS       │  │  RTL-SDR   │
@@ -25,9 +26,9 @@
                     └────────────┘  └────────────┘  └────────────┘
 ```
 
-AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three radio technologies (Wi-Fi NAN, Bluetooth 4 legacy, Bluetooth 5 Long Range), correlates detections from multiple sensor nodes, estimates true drone position via RSSI trilateration (MLAT), and scores each drone with an 8-factor threat model. Everything streams live to AEGIS Shield — a tactical operations dashboard with a real Leaflet map, animated threat gauges, and a live packet feed.
+KESTREL detects FAA-mandated Remote ID broadcasts from drones across all three radio technologies (Wi-Fi NAN, Bluetooth 4 legacy, Bluetooth 5 Long Range), correlates detections from multiple sensor nodes, estimates true drone position via RSSI trilateration (MLAT), and scores each drone with an 8-factor threat model. Everything streams live to KESTREL — a tactical operations dashboard with a real Leaflet map, animated threat gauges, and a live packet feed.
 
-![AEGIS Shield](docs/screenshot.png)
+![KESTREL](docs/screenshot.png)
 
 ---
 
@@ -37,15 +38,15 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 - [Architecture](#architecture)
 - [Hardware](#hardware)
 - [Deployment](#deployment)
-  - [AEGIS Server](#aegis-server-deployment)
+  - [KESTREL Server](#kestrel-server-deployment)
   - [Managing the server](#managing-the-server)
-  - [ARGUS Nodes](#argus-node-deployment)
+  - [KESTREL nodes](#kestrel-node-deployment)
   - [Remote access — Tailscale](#remote-access--tailscale-recommended)
   - [WireGuard VPN](#wireguard-vpn-alternative)
   - [Drone make/model reference](#drone-makemodel-reference)
   - [Drone registry](#drone-registry)
 - [Calibration](#calibration)
-- [AEGIS Shield](#aegis-shield)
+- [KESTREL](#kestrel)
 - [API Reference](#api-reference)
 - [Threat Scoring](#threat-scoring)
 - [MLAT / Trilateration](#mlat--trilateration)
@@ -62,18 +63,18 @@ AEGIS detects FAA-mandated Remote ID broadcasts from drones across all three rad
 git clone https://github.com/RED-RED-RED/project-aegis-shield
 cd project-aegis-shield
 
-# 2. Deploy AEGIS Server (Docker installed automatically; Ubuntu 24.04/26.04 LTS,
+# 2. Deploy KESTREL Server (Docker installed automatically; Ubuntu 24.04/26.04 LTS,
 #    Debian 12+, or Pi OS 64-bit — a VM or bare metal both work)
 sudo bash scripts/deploy-aegis-server.sh
 
-# 3. Deploy each ARGUS Node (run on each Pi)
+# 3. Deploy each KESTREL-NODE (run on each Pi)
 sudo bash scripts/deploy-argus-node.sh
 
 # 4. Verify
 python scripts/healthcheck.py --server <SERVER_IP>
 ```
 
-Open `http://<server-ip>` — AEGIS Shield will appear.
+Open `http://<server-ip>` — KESTREL will appear.
 
 ---
 
@@ -83,15 +84,15 @@ Open `http://<server-ip>` — AEGIS Shield will appear.
 
 | Component | Description | Runs on |
 |---|---|---|
-| **ARGUS Node** | Sensor node — scans Wi-Fi NAN, BT4/5, SDR; publishes to MQTT | Raspberry Pi 5 (8 GB) |
-| **AEGIS Server** | Central platform — ingests MQTT, stores detections, runs analysis | Pi 5 / x86 mini PC / any 64-bit Linux + Docker |
-| **AEGIS Shield** | Tactical dashboard — live map, threats, packet feed, flight history, system health | Browser (Nginx) |
+| **KESTREL-NODE** | Sensor node — scans Wi-Fi NAN, BT4/5, SDR; publishes to MQTT | Raspberry Pi 5 (8 GB) |
+| **KESTREL Server** | Central platform — ingests MQTT, stores detections, runs analysis | Pi 5 / x86 mini PC / any 64-bit Linux + Docker |
+| **KESTREL** | Tactical dashboard — live map, threats, packet feed, flight history, system health | Browser (Nginx) |
 | **Calibration** | RSSI path-loss model fitting for MLAT accuracy | Runs anywhere |
 
 ### Data flow
 
 ```
-ARGUS Node                    AEGIS Server                  AEGIS Shield
+KESTREL-NODE                    KESTREL Server                  KESTREL
 ──────────                    ────────────                  ────────────
 WiFi NAN scan  ─── MQTT ───►  subscriber.py                useStore.js
 BT5 LR scan    ─── MQTT ───►    │── INSERT detections       │── /ws WebSocket
@@ -126,7 +127,7 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 
 ## Hardware
 
-### Per ARGUS Node (~$550–650 as configured)
+### Per KESTREL-NODE (~$550–650 as configured)
 
 Reference build for the current field node. Prices are rough street figures and will drift — treat them as ballpark, not a quote.
 
@@ -153,7 +154,7 @@ Roughly **$550–600** per node with the RTL-SDR. Swapping in a HackRF (for 2.4/
 
 **Test equipment (not part of a node)** — a cooperative Remote ID broadcaster such as the **Ruko R111S** (~$40) is useful for validating detection end-to-end: fly or bench it and confirm the node picks it up on the map.
 
-### AEGIS Server (~$150–250)
+### KESTREL Server (~$150–250)
 
 Any 64-bit Linux machine with Docker. The stack (TimescaleDB + Mosquitto + FastAPI + Nginx) is light on CPU but benefits from an **NVMe SSD** — TimescaleDB is write-heavy, so don't run the database on an SD card — and **16 GB RAM** for the history views. A fanless Intel N100/N305 mini PC (16 GB / NVMe, ~$150–250, 12–19 V input for vehicle/field use) is the sweet spot; a Raspberry Pi 5 (8 GB) with an NVMe HAT also works for small deployments. An old NUC or a cloud VPS works equally well.
 
@@ -173,7 +174,7 @@ Any 64-bit Linux machine with Docker. The stack (TimescaleDB + Mosquitto + FastA
 
 ## Deployment
 
-### AEGIS Server deployment
+### KESTREL Server deployment
 
 ```bash
 # Interactive
@@ -185,7 +186,7 @@ AEGIS_MQTT_PASSWORD=yourmqttpass \
 sudo bash scripts/deploy-aegis-server.sh --yes
 ```
 
-The script: installs Docker, builds AEGIS Shield, generates credentials, configures Mosquitto auth, starts all containers via Docker Compose, and installs an `aegis-server.service` systemd unit for auto-start on boot.
+The script: installs Docker, builds KESTREL, generates credentials, configures Mosquitto auth, starts all containers via Docker Compose, and installs an `aegis-server.service` systemd unit for auto-start on boot.
 
 > **OS support.** Tested on Ubuntu 24.04 and 26.04 LTS, Debian 12+, and Raspberry Pi OS (64-bit). Docker is installed via the official `get.docker.com` convenience script, which tracks new releases — including fresh LTS codenames. On a brand-new release the Docker apt repo can lag by a few days; if the script reports no candidate for your codename, either retry after a day or install the engine against the previous LTS codename:
 > ```bash
@@ -200,8 +201,8 @@ The script: installs Docker, builds AEGIS Shield, generates credentials, configu
 
 | Service | Port | Description |
 |---|---|---|
-| Nginx | 80 | AEGIS Shield UI + API reverse proxy |
-| AEGIS Server (FastAPI) | 8000 | Internal, proxied by Nginx |
+| Nginx | 80 | KESTREL UI + API reverse proxy |
+| KESTREL Server (FastAPI) | 8000 | Internal, proxied by Nginx |
 | Mosquitto | 1883 | MQTT broker (authenticated) |
 | TimescaleDB | 5432 | Internal only |
 
@@ -221,7 +222,7 @@ The four containers that start together:
 
 | Container | Port | Description |
 |---|---|---|
-| `nginx` | 80 | Serves AEGIS Shield UI and proxies `/api` and `/ws` |
+| `nginx` | 80 | Serves KESTREL UI and proxies `/api` and `/ws` |
 | `aegis-server` | 8000 (internal) | FastAPI — starts after timescaledb and mosquitto are healthy |
 | `mosquitto` | 1883 | MQTT broker (authenticated) |
 | `timescaledb` | 5432 (internal) | Time-series database |
@@ -240,18 +241,18 @@ Once set, every request must include the key as a header:
 X-Api-Key: your-secret-key-here
 ```
 
-The `/health` endpoint is always unauthenticated. It returns server CPU/memory/disk usage, database connectivity status, MQTT reachability (based on last node heartbeat), and online/total node counts — used by the AEGIS Shield Server Health panel.
+The `/health` endpoint is always unauthenticated. It returns server CPU/memory/disk usage, database connectivity status, MQTT reachability (based on last node heartbeat), and online/total node counts — used by the KESTREL Server Health panel.
 
-If you are running AEGIS Shield from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
+If you are running KESTREL from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
 
 ```env
 # aegis-shield/.env.production
 VITE_API_KEY=your-secret-key-here
 ```
 
-> **Recommendation:** Enable API key auth whenever AEGIS Server is reachable from outside your local network, such as over Tailscale, WireGuard VPN, or a public interface.
+> **Recommendation:** Enable API key auth whenever KESTREL Server is reachable from outside your local network, such as over Tailscale, WireGuard VPN, or a public interface.
 
-### ARGUS Node deployment
+### KESTREL-NODE deployment
 
 Flash Pi OS Lite 64-bit to SD card, enable SSH, then:
 
@@ -266,7 +267,7 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh
 # Non-interactive install (USB GPS, default)
 sudo bash aegis-platform/scripts/deploy-argus-node.sh \
   --unattended \
-  --node-id ARGUS-01 \
+  --node-id KN-01 \
   --server-ip 192.168.1.100 \
   --mqtt-password yourmqttpass
 
@@ -274,7 +275,7 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh \
 # name when remote (see "Remote access — Tailscale" below)
 sudo bash aegis-platform/scripts/deploy-argus-node.sh \
   --unattended \
-  --node-id ARGUS-01 \
+  --node-id KN-01 \
   --server-ip 192.168.1.100 \
   --mqtt-fallback aegis-server \
   --mqtt-password yourmqttpass
@@ -282,7 +283,7 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh \
 # Non-interactive install (legacy UART GPS — requires reboot)
 sudo bash aegis-platform/scripts/deploy-argus-node.sh \
   --unattended \
-  --node-id ARGUS-01 \
+  --node-id KN-01 \
   --server-ip 192.168.1.100 \
   --mqtt-password yourmqttpass \
   --gps-mode uart
@@ -307,11 +308,11 @@ Or run interactively — the script prompts for all values, including GPS mode, 
 ```bash
 # Node 1 (USB GPS)
 sudo bash scripts/deploy-argus-node.sh \
-  --unattended --node-id ARGUS-01 --server-ip 192.168.1.100 --mqtt-password pass
+  --unattended --node-id KN-01 --server-ip 192.168.1.100 --mqtt-password pass
 
 # Node 2
 sudo bash scripts/deploy-argus-node.sh \
-  --unattended --node-id ARGUS-02 --server-ip 192.168.1.100 --mqtt-password pass
+  --unattended --node-id KN-02 --server-ip 192.168.1.100 --mqtt-password pass
 ```
 
 ### Remote access — Tailscale (recommended)
@@ -345,14 +346,14 @@ The Mosquitto container binds `0.0.0.0:1883`, so it's already reachable over the
 If you prefer a self-hosted VPN over Tailscale:
 
 ```bash
-# On AEGIS server first
+# On KESTREL server first
 sudo bash scripts/setup-wireguard.sh server
 
-# On each ARGUS node (prompts for server public key)
+# On each KESTREL node (prompts for server public key)
 sudo bash scripts/setup-wireguard.sh node <SERVER_PUBLIC_IP> <NODE_INDEX>
 ```
 
-Or pass `ARGUS_USE_VPN=1` to `deploy-argus-node.sh` and it handles VPN setup automatically. VPN addressing: AEGIS server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`… With WireGuard, set `host_fallback` to the server's VPN address (`10.100.0.1`) for the same LAN-first / VPN-fallback behaviour.
+Or pass `ARGUS_USE_VPN=1` to `deploy-argus-node.sh` and it handles VPN setup automatically. VPN addressing: KESTREL server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`… With WireGuard, set `host_fallback` to the server's VPN address (`10.100.0.1`) for the same LAN-first / VPN-fallback behaviour.
 
 ### Health check
 
@@ -393,7 +394,7 @@ bash scripts/update.sh version       # Show current commit, branch, date, and AP
 
 ### Drone make/model reference
 
-AEGIS decodes a broadcast Remote ID serial into a drone make and model. It matches the serial by **longest prefix** against serial prefixes taken from the FAA Declaration of Compliance (DoC) serial lists: within a filing every serial shares a model-specific prefix (e.g. a Skydio X10-with-parachute serial is `X10PCH` + 4 chars), so the longest known prefix a serial starts with gives the make and model. Each drone's `make`, `model`, `mfr_code`, and a graded `id_source` are stored on its track and shown in the Selected Drone panel, the live list, and Flight History.
+KESTREL decodes a broadcast Remote ID serial into a drone make and model. It matches the serial by **longest prefix** against serial prefixes taken from the FAA Declaration of Compliance (DoC) serial lists: within a filing every serial shares a model-specific prefix (e.g. a Skydio X10-with-parachute serial is `X10PCH` + 4 chars), so the longest known prefix a serial starts with gives the make and model. Each drone's `make`, `model`, `mfr_code`, and a graded `id_source` are stored on its track and shown in the Selected Drone panel, the live list, and Flight History.
 
 `id_source` tells you how confident the value is:
 
@@ -443,7 +444,7 @@ python calibration/calibrate.py \
   --server http://192.168.1.100:8000 \
   --drone-id YOUR_DRONE_SERIAL \
   --gpx my_flight.gpx \
-  --notes "Open field, 3 ARGUS nodes" \
+  --notes "Open field, 3 KESTREL nodes" \
   --plots
 
 # Outputs:
@@ -455,13 +456,13 @@ python calibration/calibrate.py \
 cd aegis-server/docker && docker compose restart aegis-server
 ```
 
-Supports GPX (DJI Fly, Litchi, Mission Planner), DJI SRT subtitle files, and CSV tracks. Each ARGUS node gets independent fitted parameters. See [`calibration/`](calibration/) for full documentation.
+Supports GPX (DJI Fly, Litchi, Mission Planner), DJI SRT subtitle files, and CSV tracks. Each KESTREL node gets independent fitted parameters. See [`calibration/`](calibration/) for full documentation.
 
 ---
 
-## AEGIS Shield
+## KESTREL
 
-AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a full state snapshot every 500ms. Threat data is polled from the REST API every 3 seconds. Units default to **imperial** (toggle in the top-right corner).
+KESTREL connects to the KESTREL Server via WebSocket (`/ws`) and receives a full state snapshot every 500ms. Threat data is polled from the REST API every 3 seconds. Units default to **imperial** (toggle in the top-right corner).
 
 ### Views
 
@@ -475,9 +476,9 @@ AEGIS Shield connects to the AEGIS Server via WebSocket (`/ws`) and receives a f
 
 ### Sidebar
 
-- **ARGUS Nodes** — lists each node with status dot, CPU %, GPS fix, and active radio badges (WiFi / BT5 / SDR). Badges reflect the actual scanners running on the node.
+- **KESTREL nodes** — lists each node with status dot, CPU %, GPS fix, and active radio badges (WiFi / BT5 / SDR). Badges reflect the actual scanners running on the node.
 - **Node Health** — CPU/MEM/DISK mini-bars and temperature (imperial or metric) for the selected node.
-- **Server Health** — CPU/MEM/DISK bars and DB/MQTT status dots for the AEGIS Server, polled every 10 seconds from `/health`.
+- **Server Health** — CPU/MEM/DISK bars and DB/MQTT status dots for the KESTREL Server, polled every 10 seconds from `/health`.
 
 ### Active Alerts
 
@@ -522,7 +523,7 @@ GET  /api/detections/stats              Aggregate counts
 ### Nodes
 
 ```
-GET  /api/nodes                         All ARGUS nodes with health
+GET  /api/nodes                         All KESTREL nodes with health
 GET  /api/nodes/{id}                    Node detail
 GET  /api/nodes/{id}/detections         Recent detections from one node
 ```
@@ -579,7 +580,7 @@ GET  /api/flights/rf-contacts           No-RID / RF-only contacts over a range
 | `new_drone` | LOW | First detection of a drone ID in the database |
 | `threat_score` | HIGH | Threat score crosses into ≥ 70 band |
 | `position_mismatch` | HIGH | MLAT estimate diverges > 250m from broadcast with spoof confidence > 60% |
-| `gps_jamming` | MEDIUM | ARGUS node reports GPS jamming (`warning` or `critical`) from UBX-NAV-STATUS |
+| `gps_jamming` | MEDIUM | KESTREL node reports GPS jamming (`warning` or `critical`) from UBX-NAV-STATUS |
 | `rf_no_rid` | HIGH / MEDIUM | SDR-classified drone link (2.4 / 5.8 GHz) with no correlating Remote ID broadcast. 900/433 MHz links need corroboration (a second node) before they alert |
 
 ### WebSocket
@@ -607,7 +608,7 @@ Each active drone receives a score from 0–100:
 | High altitude / no RID | **15** | Above 400ft AGL without operator ID |
 | Unknown UA type | **8** | Type field absent, "none", or "ground_obstacle" while airborne |
 | Speed anomaly | **8** | > 25 m/s (ramps) / > 50 m/s (max, physically implausible) |
-| Single node only | **7** | Only one ARGUS node detecting the drone |
+| Single node only | **7** | Only one KESTREL node detecting the drone |
 | Stale GPS | **4** | `last_seen` timestamp drifting behind wall clock |
 | No self-ID | **3** | Missing description string |
 
@@ -617,7 +618,7 @@ Each active drone receives a score from 0–100:
 
 ## MLAT / Trilateration
 
-AEGIS uses weighted least-squares trilateration on RSSI measurements from ≥ 3 ARGUS nodes to independently estimate each drone's position. Compared to the drone's broadcast position to detect GPS spoofing.
+KESTREL uses weighted least-squares trilateration on RSSI measurements from ≥ 3 KESTREL nodes to independently estimate each drone's position. Compared to the drone's broadcast position to detect GPS spoofing.
 
 **Model:** `RSSI = RSSI_REF − 10 × n × log₁₀(d)`
 
@@ -689,15 +690,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for conventions and workflow.
 
 | Module | Tests |
 |---|---|
-| ARGUS Node — OpenDroneID parser + RID wire formats | 30 |
-| ARGUS Node — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 66 |
-| ARGUS Node — Wi-Fi NAN dual-adapter scanner (requires scapy) | 31 |
-| ARGUS Node — Bluetooth HCI (BT4/5 Long Range) | 43 |
-| ARGUS Node — SDR classifier + scanner | 30 |
-| AEGIS Server — alert engine (rules + GPS jamming alerts) | 19 |
-| AEGIS Server — trilateration + threat scoring | 30 |
-| AEGIS Server — RF pipeline (classify → correlate → score → alert) | 22 |
-| AEGIS Server — system health + flight history | 9 |
+| KESTREL-NODE — OpenDroneID parser + RID wire formats | 30 |
+| KESTREL-NODE — GPS subsystem (auto-detect, UBX, survey-in, jamming) | 66 |
+| KESTREL-NODE — Wi-Fi NAN dual-adapter scanner (requires scapy) | 31 |
+| KESTREL-NODE — Bluetooth HCI (BT4/5 Long Range) | 43 |
+| KESTREL-NODE — SDR classifier + scanner | 30 |
+| KESTREL Server — alert engine (rules + GPS jamming alerts) | 19 |
+| KESTREL Server — trilateration + threat scoring | 30 |
+| KESTREL Server — RF pipeline (classify → correlate → score → alert) | 22 |
+| KESTREL Server — system health + flight history | 9 |
 | Calibration — engine, collector, config writer | 31 |
 | **Total** | **311** |
 

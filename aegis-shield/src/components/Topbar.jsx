@@ -147,12 +147,12 @@ export default function Topbar() {
                 stroke="var(--steel-blue)" strokeWidth="1.5"
                 fill="rgba(74,111,165,0.08)"/>
               <text x="13" y="17" textAnchor="middle"
-                fontFamily="var(--mono)" fontSize="9" fill="var(--steel-blue)" fontWeight="bold">A</text>
+                fontFamily="var(--mono)" fontSize="9" fill="var(--steel-blue)" fontWeight="bold">K</text>
             </svg>
           </div>
           <div>
-            <div className="tb-logo-text">AEGIS<span style={{color:"var(--text-dim)",fontWeight:300,letterSpacing:2}}> SHIELD</span></div>
-            <div className="tb-logo-sub">Airspace Protection Platform</div>
+            <div className="tb-logo-text">KESTREL<span style={{color:"var(--text-dim)",fontWeight:300,letterSpacing:2}}> AIRSPACE</span></div>
+            <div className="tb-logo-sub">Remote ID Detection Network</div>
           </div>
         </div>
 

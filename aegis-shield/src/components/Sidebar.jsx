@@ -215,7 +215,7 @@ export default function Sidebar() {
 
         {/* Node list */}
         <div className="sb-nodes">
-          <div className="sb-section">ARGUS Nodes</div>
+          <div className="sb-section">KESTREL Nodes</div>
           {nodes.length === 0 && (
             <div style={{padding:'8px 14px',fontFamily:'var(--mono)',fontSize:9,color:'var(--muted)'}}>
               Awaiting node heartbeats…

@@ -26,7 +26,7 @@ function seriesColor(nodeId, sortedNodeIds) {
   return NODE_PALETTE[i % NODE_PALETTE.length]
 }
 
-function label(nodeId) { return nodeId === SERVER_ID ? 'AEGIS Server' : nodeId }
+function label(nodeId) { return nodeId === SERVER_ID ? 'KESTREL Server' : nodeId }
 
 function valColor(metric, v) {
   if (v == null) return 'var(--muted)'
