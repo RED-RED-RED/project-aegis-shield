@@ -297,7 +297,7 @@ const css = `
 .fh-search { flex:1; width:100%; background:var(--bg1); border:1px solid var(--bg-border); color:var(--text);
   font-family:var(--mono); font-size:11px; padding:3px 6px; border-radius:3px; }
 .fh-search::placeholder { color:var(--muted); }
-.fh-listhead { padding:7px 10px; font-family:'Barlow Condensed',sans-serif; text-transform:uppercase;
+.fh-listhead { padding:7px 10px; font-family:var(--cond); text-transform:uppercase;
   font-size:12px; letter-spacing:0.05em; color:var(--text-secondary); background:var(--bg1); border-bottom:1px solid var(--bg-border); }
 .fh-recent { color:var(--threat-med); }
 .fh-list { overflow-y:auto; flex:1; min-height:80px; }

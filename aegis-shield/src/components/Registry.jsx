@@ -202,7 +202,7 @@ const css = `
 .rg-frow { display:flex; flex-wrap:wrap; gap:4px; }
 .rg-chip { background:var(--bg1); border:1px solid var(--bg-border); color:var(--text-secondary); font-family:var(--mono); font-size:10px; padding:2px 7px; border-radius:10px; cursor:pointer; }
 .rg-chip.on { color:var(--text); border-color:var(--steel-blue); }
-.rg-listhead { padding:7px 10px; font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; font-size:12px; letter-spacing:0.05em; color:var(--text-secondary); border-bottom:1px solid var(--bg-border); }
+.rg-listhead { padding:7px 10px; font-family:var(--cond); text-transform:uppercase; font-size:12px; letter-spacing:0.05em; color:var(--text-secondary); border-bottom:1px solid var(--bg-border); }
 .rg-list { overflow-y:auto; flex:1; }
 .rg-item { padding:7px 10px; border-bottom:1px solid var(--bg-border); cursor:pointer; }
 .rg-item:hover { background:var(--bg1); }
@@ -225,7 +225,7 @@ const css = `
 .rg-d-grid > div { display:flex; justify-content:space-between; font-family:var(--mono); font-size:11px; border-bottom:1px dotted var(--bg-border); padding:3px 0; }
 .rg-k { color:var(--muted); } .rg-v { color:var(--text); }
 .rg-section { margin-top:16px; }
-.rg-section-h { font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; font-size:13px; letter-spacing:0.05em; color:var(--text); border-bottom:1px solid var(--bg-border); padding-bottom:4px; margin-bottom:8px; }
+.rg-section-h { font-family:var(--cond); text-transform:uppercase; font-size:13px; letter-spacing:0.05em; color:var(--text); border-bottom:1px solid var(--bg-border); padding-bottom:4px; margin-bottom:8px; }
 .rg-catbtns { display:flex; flex-wrap:wrap; gap:6px; }
 .rg-catbtn { background:var(--bg1); border:1px solid; font-family:var(--mono); font-size:11px; padding:3px 10px; border-radius:3px; cursor:pointer; }
 .rg-catbtn.on { font-weight:bold; }

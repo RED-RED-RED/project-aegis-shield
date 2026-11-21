@@ -261,45 +261,45 @@ function Chip({ ok, label }) {
 const css = `
 .sv-root { height:100%; overflow-y:auto; padding:16px 18px; background:var(--bg0); }
 .sv-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-.sv-title { font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:20px;
+.sv-title { font-family:var(--cond); font-weight:700; font-size:20px;
   text-transform:uppercase; letter-spacing:0.04em; color:var(--text); }
 .sv-tabs { display:flex; gap:4px; }
 .sv-tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted);
-  font-family:'Barlow Condensed',sans-serif; font-weight:700; font-size:19px; text-transform:uppercase;
+  font-family:var(--cond); font-weight:700; font-size:19px; text-transform:uppercase;
   letter-spacing:0.04em; padding:0 6px 2px; cursor:pointer; }
 .sv-tab.active { color:var(--text); border-bottom-color:var(--steel-blue); }
 .sv-ranges { display:flex; gap:4px; }
 .sv-range { background:var(--bg1); border:1px solid var(--bg-border); color:var(--muted);
-  font-family:'Share Tech Mono',monospace; font-size:11px; padding:3px 10px; border-radius:3px; cursor:pointer; }
+  font-family:var(--mono); font-size:11px; padding:3px 10px; border-radius:3px; cursor:pointer; }
 .sv-range.active { color:var(--text); border-color:var(--steel-blue); background:var(--bg2); }
 .sv-err { color:var(--threat-high); font-size:12px; margin-bottom:10px; }
 .sv-empty { color:var(--muted); font-size:12px; padding:12px; }
 
 .sv-cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; margin-bottom:16px; }
-.sv-card { background:var(--bg1); border:1px solid var(--bg-border); border-radius:5px; padding:10px 12px; }
+.sv-card { background:var(--bg1); border:1px solid var(--bg-border); border-radius:3px; padding:10px 12px; }
 .sv-card-head { display:flex; align-items:center; gap:7px; margin-bottom:8px; }
 .sv-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-.sv-card-name { font-family:'Share Tech Mono',monospace; font-size:12px; color:var(--text); font-weight:700; }
-.sv-card-up { margin-left:auto; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--muted); }
+.sv-card-name { font-family:var(--mono); font-size:12px; color:var(--text); font-weight:700; }
+.sv-card-up { margin-left:auto; font-family:var(--mono); font-size:10px; color:var(--muted); }
 .sv-metrics { display:flex; flex-direction:column; gap:5px; }
-.sv-metric-top { display:flex; justify-content:space-between; font-family:'Share Tech Mono',monospace; font-size:10px; }
+.sv-metric-top { display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; }
 .sv-metric-label { color:var(--muted); }
 .sv-metric-val { font-weight:700; }
 .sv-bar { height:3px; background:var(--bg-border); border-radius:2px; overflow:hidden; margin-top:2px; }
 .sv-bar-fill { height:100%; border-radius:2px; transition:width 0.4s ease; }
 .sv-extra { margin-top:8px; display:flex; gap:6px; align-items:center; }
-.sv-sats { font-family:'Share Tech Mono',monospace; font-size:10px; }
-.sv-chip { font-family:'Share Tech Mono',monospace; font-size:10px; border:1px solid; border-radius:3px; padding:1px 6px; }
+.sv-sats { font-family:var(--mono); font-size:10px; }
+.sv-chip { font-family:var(--mono); font-size:10px; border:1px solid; border-radius:3px; padding:1px 6px; }
 
 .sv-legend { display:flex; flex-wrap:wrap; gap:14px; margin-bottom:10px; }
-.sv-leg-item { display:flex; align-items:center; gap:5px; font-family:'Share Tech Mono',monospace; font-size:10px; color:var(--text-secondary); }
+.sv-leg-item { display:flex; align-items:center; gap:5px; font-family:var(--mono); font-size:10px; color:var(--text-secondary); }
 
 .sv-charts { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:12px; }
-.sv-chart { background:var(--bg1); border:1px solid var(--bg-border); border-radius:5px; padding:8px 10px; }
-.sv-chart-title { font-family:'Share Tech Mono',monospace; font-size:11px; color:var(--text); margin-bottom:4px; }
+.sv-chart { background:var(--bg1); border:1px solid var(--bg-border); border-radius:3px; padding:8px 10px; }
+.sv-chart-title { font-family:var(--mono); font-size:11px; color:var(--text); margin-bottom:4px; }
 .sv-chart-unit { color:var(--muted); }
 .sv-svg { width:100%; height:150px; display:block; }
-.sv-axis { fill:var(--muted); font-family:'Share Tech Mono',monospace; font-size:7px; }
-.sv-nodata { fill:var(--muted); font-family:'Share Tech Mono',monospace; font-size:10px; }
-.sv-note { color:var(--muted); font-size:10px; margin-top:12px; font-family:'Share Tech Mono',monospace; }
+.sv-axis { fill:var(--muted); font-family:var(--mono); font-size:7px; }
+.sv-nodata { fill:var(--muted); font-family:var(--mono); font-size:10px; }
+.sv-note { color:var(--muted); font-size:10px; margin-top:12px; font-family:var(--mono); }
 `

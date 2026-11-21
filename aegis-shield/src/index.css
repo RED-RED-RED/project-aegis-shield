@@ -110,6 +110,17 @@ body::after {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg-border); border-radius: 2px; }
 
+/* ─── FORM CONTROLS — consistent focus across every view ───────────── */
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--steel-blue);
+  outline-offset: 1px;
+}
+input[type=text]:focus, input[type=password]:focus, input[type=number]:focus,
+input[type=search]:focus, select:focus, textarea:focus {
+  border-color: var(--steel-blue) !important;
+  box-shadow: 0 0 0 2px var(--steel-blue-dim);
+}
+
 /* ─── LEAFLET OVERRIDES ────────────────────────────────────────────── */
 .leaflet-container {
   background: var(--bg-primary) !important;

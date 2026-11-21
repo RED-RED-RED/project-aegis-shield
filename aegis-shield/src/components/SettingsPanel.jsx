@@ -162,7 +162,7 @@ const css = `
 .st-empty { color:var(--muted); padding:12px; }
 .st-group { margin-bottom:16px; }
 .st-group-head { display:flex; align-items:center; justify-content:space-between;
-  font-family:'Barlow Condensed',sans-serif; text-transform:uppercase; font-size:13px;
+  font-family:var(--cond); text-transform:uppercase; font-size:13px;
   letter-spacing:0.05em; color:var(--text); border-bottom:1px solid var(--bg-border);
   padding-bottom:4px; margin-bottom:8px; }
 .st-test { background:var(--bg2); border:1px solid var(--bg-border); color:var(--text);
