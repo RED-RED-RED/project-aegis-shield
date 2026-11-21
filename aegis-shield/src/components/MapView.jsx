@@ -378,6 +378,7 @@ export default function MapView() {
 
     map.on('moveend', () => {
       const c = map.getCenter()
+      showCenter()   // keep the readout in sync after pan / zoom / fly-to
       localStorage.setItem('aegis_map_view', JSON.stringify({
         center: [c.lat, c.lng],
         zoom:   map.getZoom(),
