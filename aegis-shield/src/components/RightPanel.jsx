@@ -123,17 +123,31 @@ const css = `
   margin-bottom: 6px;
 }
 .detail-cell {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  padding: 5px 8px;
+  background: #0f1516;
+  border: 1px solid var(--bg-border);
+  border-radius: 2px;
+  padding: 6px 9px;
 }
-.dc-label { font-size: 7px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; margin-bottom: 2px; }
-.dc-val   { font-family: var(--mono); font-size: 12px; color: var(--text); }
+.dc-label { font-family: var(--cond); font-weight: 600; font-size: 8px; letter-spacing: .13em; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 3px; }
+.dc-val   { font-family: var(--mono); font-weight: 600; font-size: 13px; color: var(--text-primary); }
 .dc-val.amber  { color: var(--amber); }
 .dc-val.green  { color: var(--olive); }
 .dc-val.danger { color: var(--danger); }
 .dc-val.ice    { color: var(--ice); }
+
+/* Selected-contact header + threat meter */
+.contact-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+.contact-head .cid { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--text-bright); }
+.contact-head .cscore {
+  margin-left: auto; font-family: var(--mono); font-weight: 700; font-size: 11px;
+  padding: 1px 7px; border-radius: 2px; background: rgba(0,0,0,0.4);
+}
+.contact-threat { margin: 0 0 11px; }
+.ct-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 5px; }
+.ct-label { font-family: var(--cond); font-weight: 700; font-size: 9px; letter-spacing: .15em; text-transform: uppercase; color: var(--text-secondary); }
+.ct-tier { font-family: var(--cond); font-weight: 700; font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
+.ct-track { height: 5px; border-radius: 3px; background: #0f1516; border: 1px solid var(--bg-border); overflow: hidden; }
+.ct-fill  { height: 100%; border-radius: 3px; transition: width .4s ease, background .4s ease; }
 .detail-row {
   display: flex;
   gap: 6px;
@@ -357,9 +371,35 @@ function DroneDetail({ drone }) {
   const imperial = useUnits()
   return (
     <div className="detail-section">
-      <div className="detail-title">Selected Drone</div>
-      <div className="detail-id">{drone.drone_id}</div>
+      <div className="detail-title">Selected Contact</div>
+      <div className="contact-head">
+        <span className="cid">{drone.drone_id}</span>
+        <span className={`dr-badge ${noRid ? 'db-alert' : 'db-ok'}`}>{noRid ? 'NO RID' : 'OK'}</span>
+        {drone.threat_score != null && (
+          <span className="cscore" style={{ color: threatColor(drone.threat_score),
+            border: `1px solid ${threatColor(drone.threat_score)}` }}>
+            {drone.threat_score.toFixed(0)}
+          </span>
+        )}
+      </div>
       <div className="detail-type">{drone.ua_type || 'Unknown type'}</div>
+      {drone.threat_score != null && (
+        <div className="contact-threat">
+          <div className="ct-head">
+            <span className="ct-label">Threat Level</span>
+            <span className="ct-tier" style={{ color: threatColor(drone.threat_score) }}>
+              {threatLabel(drone.threat_score)} · {drone.threat_score.toFixed(0)}/100
+            </span>
+          </div>
+          <div className="ct-track">
+            <div className="ct-fill" style={{
+              width: `${Math.max(0, Math.min(100, drone.threat_score))}%`,
+              background: threatColor(drone.threat_score),
+              boxShadow: `0 0 8px ${threatColor(drone.threat_score)}`,
+            }}/>
+          </div>
+        </div>
+      )}
       <div className="detail-grid">
         <div className="detail-cell">
           <div className="dc-label">Status</div>

@@ -26,7 +26,7 @@ function rfIcon(c) {
     <div style="position:relative;display:flex;align-items:center;justify-content:center;width:14px;height:14px;">
       <div style="
         position:absolute;top:-14px;left:50%;transform:translateX(-50%);
-        font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:bold;
+        font-family:var(--mono);font-size:8px;font-weight:bold;
         color:${color};background:rgba(21,24,20,0.95);padding:1px 4px;border-radius:2px;
         border:1px solid ${color};white-space:nowrap;">${label}${rfEscalated(c) ? ' ⚠' : ''}</div>
       <div style="width:10px;height:10px;background:${color};opacity:0.85;
@@ -44,8 +44,8 @@ function rfPopupHtml(c, imperial) {
         ? `<span style="color:${colors.threatLow}">Correlates with Remote ID ${c.correlated_drone_id || ''}</span>`
         : '<span style="color:var(--text-muted)">correlation unknown</span>'
   return `
-    <div style="font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.7;min-width:190px;">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;
+    <div style="font-family:var(--mono);font-size:10px;line-height:1.7;min-width:190px;">
+      <div style="font-family:var(--cond);font-weight:700;font-size:13px;
         color:${color};margin-bottom:4px;text-transform:uppercase;">
         ${RF_SIGNAL_LABELS[c.signal_type] || c.signal_type} <span style="color:var(--text-muted)">${RF_BAND_LABELS[c.band]||c.band}</span></div>
       <div><span style="color:${colors.textMuted}">FREQ  </span>${c.center_freq_hz ? (c.center_freq_hz/1e6).toFixed(1)+' MHz' : '—'}</div>
@@ -73,7 +73,7 @@ function droneIcon(drone, imperial = false) {
 
   const scoreLabel = score != null ? `<div style="
       position:absolute;top:-15px;left:50%;transform:translateX(-50%);
-      font-family:'Share Tech Mono',monospace;font-size:8px;font-weight:bold;
+      font-family:var(--mono);font-size:8px;font-weight:bold;
       color:${color};background:rgba(21,24,20,0.95);
       padding:1px 4px;border-radius:2px;border:1px solid ${color};white-space:nowrap;
     ">${score.toFixed(0)}</div>` : ''
@@ -158,6 +158,27 @@ function nodeIcon(node) {
   return L.divIcon({ html, className:'', iconSize:[20,20], iconAnchor:[10,10], popupAnchor:[0,-14] })
 }
 
+// ── Selection reticle ───────────────────────────────────────────────────────
+// A target lock drawn over the selected contact: static crosshair + corner
+// brackets, with a slowly rotating dashed ring. Color tracks threat, so a
+// hostile / high-threat lock reads red. Non-interactive — clicks pass through.
+function reticleIcon(color) {
+  const html = `<div class="kx-reticle" style="--rc:${color}">
+    <div class="kx-ring"></div>
+    <svg width="58" height="58" viewBox="0 0 58 58" fill="none" stroke="${color}">
+      <path d="M29 3v8M29 47v8M3 29h8M47 29h8" stroke-width="1.3" stroke-linecap="round"/>
+      <path d="M11 6H6v5M47 6h5v5M11 52H6v-5M47 52h5v-5" stroke-width="1.3" stroke-linecap="round"/>
+      <circle cx="29" cy="29" r="2" fill="${color}" stroke="none"/>
+    </svg>
+  </div>`
+  return L.divIcon({ html, className:'', iconSize:[58,58], iconAnchor:[29,29] })
+}
+function reticleColor(d) {
+  const s = d.threat_score
+  if (s == null) return d.has_valid_rid ? colors.threatLow : colors.threatHigh
+  return s >= 70 ? colors.threatHigh : s >= 40 ? colors.threatMed : colors.steelBlueLight
+}
+
 // ── Drone popup ────────────────────────────────────────────────────────────
 function dronePopupHtml(drone, imperial = false) {
   const s = drone.threat_score
@@ -179,11 +200,11 @@ function dronePopupHtml(drone, imperial = false) {
       </span></div>
     <div><span style="color:${colors.textMuted}">±RAD  </span>${fmtDist(drone.mlat_radius_m, imperial)}</div>` : ''
 
-  return `<div style="font-family:'Share Tech Mono',monospace;font-size:11px;line-height:1.8;min-width:220px;">
+  return `<div style="font-family:var(--mono);font-size:11px;line-height:1.8;min-width:220px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;
+      <div style="font-family:var(--cond);font-weight:700;font-size:14px;
         letter-spacing:1px;color:${colors.steelBlueLight};text-transform:uppercase;">${drone.drone_id}</div>
-      ${s != null ? `<div style="font-family:'Share Tech Mono',monospace;font-size:12px;font-weight:bold;
+      ${s != null ? `<div style="font-family:var(--mono);font-size:12px;font-weight:bold;
         color:${sc};background:rgba(0,0,0,0.5);padding:2px 8px;
         border:1px solid ${sc};border-radius:2px;">${s.toFixed(0)}/100</div>` : ''}
     </div>
@@ -227,6 +248,66 @@ const css = `
 .map-mlat-toggle:hover { border-color:var(--border-hi); color:var(--text); }
 .map-mlat-toggle.on { border-color:var(--ice-dim); color:var(--ice); }
 .mlat-dot { width:7px; height:7px; border-radius:50%; border:2px dashed var(--ice); flex-shrink:0; }
+
+/* ── Tactical map chrome ─────────────────────────────────────────── */
+.kx-chrome { position:absolute; inset:0; z-index:650; pointer-events:none; }
+.kx-corner { position:absolute; width:16px; height:16px; border:1px solid var(--border-hi); opacity:0.7; }
+.kx-corner.tl { top:7px;    left:7px;  border-right:0; border-bottom:0; }
+.kx-corner.tr { top:7px;    right:7px; border-left:0;  border-bottom:0; }
+.kx-corner.bl { bottom:7px; left:7px;  border-right:0; border-top:0; }
+.kx-corner.br { bottom:7px; right:7px; border-left:0;  border-top:0; }
+
+.kx-viewtag {
+  position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:700;
+  display:flex; align-items:center; gap:7px; padding:4px 11px;
+  background:rgba(14,19,18,0.82); border:1px solid var(--bg-border); border-radius:2px;
+  font-family:var(--cond); font-weight:600; font-size:10px; letter-spacing:0.2em;
+  text-transform:uppercase; color:var(--text-secondary);
+  backdrop-filter:blur(8px); pointer-events:none; white-space:nowrap;
+}
+.kx-viewtag .d { width:6px; height:6px; border-radius:50%; background:var(--signal);
+  box-shadow:0 0 6px var(--signal); animation:kx-beat 1.6s infinite; }
+
+.kx-north {
+  position:absolute; top:10px; right:12px; z-index:700;
+  width:38px; height:38px; display:flex; align-items:center; justify-content:center;
+  background:rgba(14,19,18,0.7); border:1px solid var(--bg-border); border-radius:50%;
+  backdrop-filter:blur(6px); pointer-events:none;
+}
+.kx-north .lbl {
+  position:absolute; top:3px; left:50%; transform:translateX(-50%);
+  font-family:var(--cond); font-weight:700; font-size:8px; letter-spacing:0.08em;
+  color:var(--text-secondary);
+}
+
+.kx-coord {
+  position:absolute; bottom:12px; left:50%; transform:translateX(-50%); z-index:700;
+  display:flex; gap:16px; padding:5px 13px;
+  background:rgba(14,19,18,0.82); border:1px solid var(--bg-border); border-radius:2px;
+  font-family:var(--mono); font-size:10.5px; backdrop-filter:blur(8px);
+  pointer-events:none; white-space:nowrap;
+}
+.kx-coord b { color:var(--text-muted); font-weight:600; letter-spacing:0.1em; margin-right:6px; }
+.kx-coord .val { color:var(--text-primary); }
+
+.kx-reticle { position:relative; width:58px; height:58px; pointer-events:none;
+  filter:drop-shadow(0 0 3px var(--rc)); }
+.kx-ring { position:absolute; inset:9px; border-radius:50%;
+  border:1px dashed var(--rc); opacity:0.85; animation:kx-ret-spin 16s linear infinite; }
+@keyframes kx-ret-spin { from { transform:rotate(0) } to { transform:rotate(360deg) } }
+@keyframes kx-beat { 0%,100% { opacity:0.4 } 50% { opacity:1 } }
+@media (prefers-reduced-motion: reduce) { .kx-ring, .kx-viewtag .d { animation:none } }
+
+/* Restyled, accurate scale bar (Leaflet control) */
+.map-wrap .leaflet-control-scale { margin:0 12px 10px 0; }
+.map-wrap .leaflet-control-scale-line {
+  background:rgba(14,19,18,0.82); border:1px solid var(--border-hi); border-top:none;
+  color:var(--text-secondary); font-family:var(--mono); font-size:9px; letter-spacing:0.06em;
+  line-height:1.3; padding:1px 6px 2px; box-shadow:none; backdrop-filter:blur(8px);
+  text-shadow:none;
+}
+.map-wrap .leaflet-control-scale-line:not(:first-child) { border-top:none; margin-top:-1px;
+  border-bottom:none; border-top:1px solid var(--border-hi); }
 `
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -244,12 +325,16 @@ export default function MapView() {
   const rfCircRef   = useRef({})
   const opMarkRef   = useRef({})
   const opLineRef   = useRef({})
+  const reticleRef  = useRef(null)
+  const latRef      = useRef(null)
+  const lonRef      = useRef(null)
 
   const drones      = useStore(selectActiveDrones)
   const nodes       = useStore(selectAllNodes)
   const rfContacts  = useStore(selectRfContacts)
   const showMlat    = useStore(s => s.showMlatLayer)
   const selectDrone = useStore(s => s.selectDrone)
+  const selectedId  = useStore(s => s.selectedDroneId)
   const toggleMlat  = useStore(s => s.toggleMlatLayer)
   const liveActiveS = useStore(s => s.liveActiveS)
   const imperial    = useUnits()
@@ -274,6 +359,20 @@ export default function MapView() {
       attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       maxZoom: 19,
     }).addTo(map)
+
+    L.control.scale({ position:'bottomright', maxWidth:110, imperial:true, metric:true }).addTo(map)
+
+    // Live cursor coordinate readout. Write straight to the DOM nodes so the
+    // readout tracks the pointer without re-rendering the component. Falls back
+    // to the view center when the pointer leaves the map.
+    const writeCoord = (lat, lon) => {
+      if (latRef.current) latRef.current.textContent = lat.toFixed(5)
+      if (lonRef.current) lonRef.current.textContent = lon.toFixed(5)
+    }
+    const showCenter = () => { const c = map.getCenter(); writeCoord(c.lat, c.lng) }
+    showCenter()
+    map.on('mousemove', e => writeCoord(e.latlng.lat, e.latlng.lng))
+    map.on('mouseout', showCenter)
 
     map.on('moveend', () => {
       const c = map.getCenter()
@@ -472,8 +571,8 @@ export default function MapView() {
     for (const node of nodes) {
       if (!node.lat || !node.lon) continue
       const popupHtml = `
-        <div style="font-family:'Share Tech Mono',monospace;font-size:10px;line-height:1.7;">
-          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:13px;
+        <div style="font-family:var(--mono);font-size:10px;line-height:1.7;">
+          <div style="font-family:var(--cond);font-weight:700;font-size:13px;
             color:${colors.steelBlueLight};margin-bottom:4px;text-transform:uppercase;">${node.node_id}</div>
           <div style="color:${node.status==='online'?colors.nodeOnline:colors.threatHigh}">${node.status?.toUpperCase()}</div>
           <div style="color:${colors.textMuted}">CPU ${node.cpu_pct?.toFixed(0)||'—'}% MEM ${node.mem_pct?.toFixed(0)||'—'}%</div>
@@ -489,11 +588,48 @@ export default function MapView() {
     }
   }, [nodes])
 
+  // ── Selection reticle: lock onto the selected contact ─────────────────────
+  useEffect(() => {
+    const map = leafletRef.current
+    if (!map) return
+    const d = drones.find(x => x.drone_id === selectedId)
+    if (!d || d.lat == null || d.lon == null) {
+      if (reticleRef.current) { map.removeLayer(reticleRef.current); reticleRef.current = null }
+      return
+    }
+    const ll = [d.lat, d.lon]
+    const icon = reticleIcon(reticleColor(d))
+    if (reticleRef.current) {
+      reticleRef.current.setLatLng(ll).setIcon(icon)
+    } else {
+      reticleRef.current = L.marker(ll, { icon, zIndexOffset:20, interactive:false,
+        keyboard:false }).addTo(map)
+    }
+  }, [selectedId, drones])
+
   return (
     <>
       <style>{css}</style>
       <div className="map-wrap">
         <div ref={mapRef} style={{width:'100%',height:'100%'}}/>
+
+        {/* Tactical chrome overlay */}
+        <div className="kx-chrome">
+          <div className="kx-corner tl"/><div className="kx-corner tr"/>
+          <div className="kx-corner bl"/><div className="kx-corner br"/>
+        </div>
+        <div className="kx-viewtag"><span className="d"/>Live Airspace</div>
+        <div className="kx-north" title="North">
+          <span className="lbl">N</span>
+          <svg width="22" height="22" viewBox="0 0 22 22">
+            <polygon points="11,2 14,11 11,9 8,11" fill="var(--threat-high)"/>
+            <polygon points="11,20 14,11 11,13 8,11" fill="var(--text-muted)"/>
+          </svg>
+        </div>
+        <div className="kx-coord">
+          <span><b>LAT</b><span className="val" ref={latRef}>—</span></span>
+          <span><b>LON</b><span className="val" ref={lonRef}>—</span></span>
+        </div>
         <div className={`map-mlat-toggle ${showMlat ? 'on' : ''}`} onClick={toggleMlat}>
           <div className="mlat-dot"/>
           MLAT {showMlat ? 'ON' : 'OFF'}
