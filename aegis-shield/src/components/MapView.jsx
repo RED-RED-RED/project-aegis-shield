@@ -328,6 +328,7 @@ export default function MapView() {
   const reticleRef  = useRef(null)
   const latRef      = useRef(null)
   const lonRef      = useRef(null)
+  const dronesRef   = useRef([])
 
   const drones      = useStore(selectActiveDrones)
   const nodes       = useStore(selectAllNodes)
@@ -338,6 +339,7 @@ export default function MapView() {
   const toggleMlat  = useStore(s => s.toggleMlatLayer)
   const liveActiveS = useStore(s => s.liveActiveS)
   const imperial    = useUnits()
+  dronesRef.current = drones   // latest positions, read on selection without re-firing fly-to
 
   useEffect(() => {
     if (leafletRef.current) return
@@ -606,6 +608,26 @@ export default function MapView() {
         keyboard:false }).addTo(map)
     }
   }, [selectedId, drones])
+
+  // ── Fly-to on select ──────────────────────────────────────────────────────
+  // Recenter the map on a newly selected contact, but only when it sits
+  // off-screen, and gently (pan, keeping zoom) unless we're zoomed far out.
+  // Keyed on selectedId alone so telemetry ticks never yank the view, and a
+  // contact you clicked on the map (already visible) doesn't move it.
+  useEffect(() => {
+    const map = leafletRef.current
+    if (!map || !selectedId) return
+    const d = dronesRef.current.find(x => x.drone_id === selectedId)
+    if (!d || d.lat == null || d.lon == null) return
+    const ll = L.latLng(d.lat, d.lon)
+    if (map.getBounds().pad(-0.15).contains(ll)) return   // comfortably in view already
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (map.getZoom() < 12) {
+      reduce ? map.setView(ll, 14) : map.flyTo(ll, 14, { duration: 0.6 })
+    } else {
+      reduce ? map.setView(ll, map.getZoom()) : map.panTo(ll, { animate: true, duration: 0.6 })
+    }
+  }, [selectedId])
 
   return (
     <>
