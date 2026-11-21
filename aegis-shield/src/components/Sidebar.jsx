@@ -1,5 +1,6 @@
 // src/components/Sidebar.jsx
 import { useStore, selectAllNodes, selectActiveDrones, selectOpenAlerts, useUnits } from '../store/useStore'
+import Icon from './Icons'
 
 const css = `
 .sidebar {
@@ -17,36 +18,40 @@ const css = `
   border-bottom: 1px solid var(--border);
 }
 .sb-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: 10px;
+  padding: 8px 10px;
   border-radius: 3px;
   cursor: pointer;
   font-family: var(--cond);
   font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 1.5px;
+  font-size: 12px;
+  letter-spacing: .12em;
   text-transform: uppercase;
-  color: var(--text-dim);
-  transition: all 0.12s;
-  border: 1px solid transparent;
-  margin-bottom: 2px;
+  color: var(--text-secondary);
+  transition: color .12s, background .12s;
+  margin-bottom: 1px;
 }
 .sb-nav-item:hover {
-  background: var(--bg3);
-  color: var(--text);
+  background: #0f1516;
+  color: var(--text-primary);
 }
 .sb-nav-item.active {
-  background: var(--steel-blue-dim);
-  border-color: var(--steel-blue-dim);
-  color: var(--steel-blue);
+  background: var(--olive-dim);
+  color: var(--text-bright);
 }
+.sb-nav-item.active::before {
+  content: '';
+  position: absolute; left: -8px; top: 7px; bottom: 7px; width: 3px;
+  border-radius: 0 2px 2px 0; background: var(--olive);
+}
+.sb-nav-item.active .sb-nav-icon { color: var(--olive); }
 .sb-nav-icon {
-  font-size: 13px;
-  width: 16px;
-  text-align: center;
-  flex-shrink: 0;
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); flex-shrink: 0;
 }
 .sb-nav-badge {
   margin-left: auto;
@@ -64,12 +69,13 @@ const css = `
   padding: 8px 0;
 }
 .sb-section {
-  font-family: var(--mono);
-  font-size: 8px;
-  letter-spacing: 2px;
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: .14em;
   text-transform: uppercase;
-  color: var(--muted);
-  padding: 4px 14px 6px;
+  color: var(--text-secondary);
+  padding: 6px 14px 7px;
 }
 .sb-node {
   padding: 8px 12px;
@@ -192,19 +198,19 @@ export default function Sidebar() {
         {/* Navigation */}
         <nav className="sb-nav">
           {[
-            { id: 'map',     icon: '◈', label: 'Live Map' },
-            { id: 'threats', icon: '◉', label: 'Threats' },
-            { id: 'packets', icon: '≋', label: 'Packet Feed' },
-            { id: 'flights', icon: '✈', label: 'Flights' },
-            { id: 'registry', icon: '▦', label: 'Registry' },
-            { id: 'system',  icon: '⚙', label: 'System' },
+            { id: 'map',     icon: 'map',      label: 'Live Map' },
+            { id: 'threats', icon: 'threat',   label: 'Threats' },
+            { id: 'packets', icon: 'signal',   label: 'Packet Feed' },
+            { id: 'flights', icon: 'flight',   label: 'Flights' },
+            { id: 'registry', icon: 'registry', label: 'Registry' },
+            { id: 'system',  icon: 'system',   label: 'System' },
           ].map(item => (
             <div
               key={item.id}
               className={`sb-nav-item ${activePanel === item.id ? 'active' : ''}`}
               onClick={() => setPanel(item.id)}
             >
-              <span className="sb-nav-icon">{item.icon}</span>
+              <span className="sb-nav-icon"><Icon name={item.icon} size={17} /></span>
               {item.label}
               {item.id === 'map' && highAlerts > 0 && (
                 <span className="sb-nav-badge">{highAlerts}</span>

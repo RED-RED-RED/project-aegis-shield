@@ -1,45 +1,51 @@
 // src/theme/colors.js
-// Single source of truth for the Tactical Olive palette.
+// Single source of truth for the KESTREL palette (modern tactical).
 // CSS custom properties in index.css mirror these values.
 // Import this file in any component that needs hex values in JS
 // (e.g. Leaflet template literals, canvas draws).
 
 export const colors = {
-  // Backgrounds
-  bgPrimary:   '#151814',   // main app background — dark olive-black
-  bgSurface:   '#1E2420',   // cards, panels, sidebars
-  bgElevated:  '#252C24',   // modals, dropdowns, hover states
-  bgBorder:    '#2A3028',   // dividers and borders
+  // Backgrounds — cool graphite with a faint green undertone
+  bgPrimary:   '#0E1312',   // main app background
+  bgSurface:   '#141A1B',   // cards, panels, sidebars
+  bgElevated:  '#1B2325',   // modals, dropdowns, hover states
+  bgBorder:    '#243031',   // dividers and borders
+  bgBorderHi:  '#38484A',   // brighter hairline / corner brackets
 
-  // Primary accent
-  steelBlue:      '#4A6FA5',   // primary interactive — links, active states, node indicators
-  steelBlueLight: '#7A9FD0',   // hover states, highlights
-  steelBlueDim:   '#2A4060',   // subtle blue tint backgrounds
+  // Primary accent — interaction / selection
+  steelBlue:      '#5C93D6',
+  steelBlueLight: '#7AAEE8',
+  steelBlueDim:   '#20364C',
 
-  // UI accent
-  olive:    '#7A8C4E',   // secondary accent — online indicators, labels, headings
-  oliveDim: '#3A4828',   // subtle olive tint backgrounds
+  // Brand accent
+  olive:    '#A6C255',
+  oliveDim: '#59692F',
+
+  // Live / active — used sparingly
+  signal:    '#2FE3C6',
+  signalDim: '#14433C',
 
   // Threat levels
-  threatLow:        '#4A7C59',   // LOW — muted sage green
-  threatLowBg:      '#1A2A1A',
-  threatLowBorder:  '#3A6040',
+  threatLow:        '#51A06A',
+  threatLowBg:      '#10211A',
+  threatLowBorder:  '#2C5340',
 
-  threatMed:        '#C8924A',   // MED — amber/tan
-  threatMedBg:      '#2A2010',
-  threatMedBorder:  '#6B4E20',
+  threatMed:        '#E3A53F',
+  threatMedBg:      '#241A0C',
+  threatMedBorder:  '#5A431C',
 
-  threatHigh:       '#E06060',   // HIGH — muted red
-  threatHighBg:     '#2A1414',
-  threatHighBorder: '#6B2020',
+  threatHigh:       '#E8574C',
+  threatHighBg:     '#230F0E',
+  threatHighBorder: '#5A2420',
 
   // Text
-  textPrimary:   '#D8E0D0',   // main text
-  textSecondary: '#9BAAB8',   // timestamps, labels
-  textMuted:     '#5A6A58',   // disabled, placeholder, offline
+  textPrimary:   '#DEE6E1',
+  textSecondary: '#8DA09C',
+  textMuted:     '#51615B',
+  textBright:    '#F4F8F5',
 
   // Node status
-  nodeOnline:  '#4A6FA5',   // online node dot  (= steelBlue)
-  nodeOffline: '#3A4040',   // offline node dot
-  nodeWarning: '#C8924A',   // degraded node dot (= threatMed)
+  nodeOnline:  '#A6C255',   // online node  (= olive)
+  nodeOffline: '#35403D',
+  nodeWarning: '#E3A53F',   // degraded node (= threatMed)
 }

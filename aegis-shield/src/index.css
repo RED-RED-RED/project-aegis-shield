@@ -1,71 +1,77 @@
-@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&family=Exo+2:wght@300;400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Saira:wght@400;500;600;700&family=Saira+Condensed:wght@500;600;700&display=swap');
 
-/* ─── PALETTE ─────────────────────────────────────────────────────── */
+/* ─── PALETTE — KESTREL (modern tactical) ─────────────────────────── */
 :root {
-  /* ── New named vars (use these going forward) ── */
-  --bg-primary:   #151814;
-  --bg-surface:   #1E2420;
-  --bg-elevated:  #252C24;
-  --bg-border:    #2A3028;
+  /* Surfaces: cool graphite with a faint green undertone */
+  --bg-primary:   #0E1312;
+  --bg-surface:   #141A1B;
+  --bg-elevated:  #1B2325;
+  --bg-border:    #243031;
 
-  --steel-blue:       #4A6FA5;
-  --steel-blue-light: #7A9FD0;
-  --steel-blue-dim:   #2A4060;
+  /* Interaction / selection */
+  --steel-blue:       #5C93D6;
+  --steel-blue-light: #7AAEE8;
+  --steel-blue-dim:   #20364C;
 
-  --olive:     #7A8C4E;
-  --olive-dim: #3A4828;
+  /* Brand accent */
+  --olive:     #A6C255;
+  --olive-dim: #59692F;
 
-  --threat-low:        #4A7C59;
-  --threat-low-bg:     #1A2A1A;
-  --threat-low-border: #3A6040;
+  /* Live / active — used sparingly */
+  --signal:     #2FE3C6;
+  --signal-dim: #14433C;
 
-  --threat-med:        #C8924A;
-  --threat-med-bg:     #2A2010;
-  --threat-med-border: #6B4E20;
+  --threat-low:        #51A06A;
+  --threat-low-bg:     #10211A;
+  --threat-low-border: #2C5340;
 
-  --threat-high:        #E06060;
-  --threat-high-bg:     #2A1414;
-  --threat-high-border: #6B2020;
+  --threat-med:        #E3A53F;
+  --threat-med-bg:     #241A0C;
+  --threat-med-border: #5A431C;
 
-  --text-primary:   #D8E0D0;
-  --text-secondary: #9BAAB8;
-  --text-muted:     #5A6A58;
+  --threat-high:        #E8574C;
+  --threat-high-bg:     #230F0E;
+  --threat-high-border: #5A2420;
 
-  --node-online:  #4A6FA5;
-  --node-offline: #3A4040;
-  --node-warning: #C8924A;
+  --text-primary:   #DEE6E1;
+  --text-secondary: #8DA09C;
+  --text-muted:     #51615B;
+  --text-bright:    #F4F8F5;
+
+  --node-online:  #A6C255;
+  --node-offline: #35403D;
+  --node-warning: #E3A53F;
 
   /* ── Legacy var names — mapped to new palette values ── */
-  /* Components that still reference these will pick up the new colors. */
-  --bg0:         #151814;
-  --bg1:         #1E2420;
-  --bg2:         #252C24;
-  --bg3:         #252C24;
-  --border:      #2A3028;
-  --border-hi:   #3A4828;
+  --bg0:         #0E1312;
+  --bg1:         #141A1B;
+  --bg2:         #1B2325;
+  --bg3:         #1B2325;
+  --border:      #243031;
+  --border-hi:   #38484A;
 
-  --amber:       #C8924A;
-  --amber-dim:   #6B4E20;
-  --amber-glow:  rgba(200,146,74,0.12);
+  --amber:       #E3A53F;
+  --amber-dim:   #5A431C;
+  --amber-glow:  rgba(227,165,63,0.12);
 
-  --phosphor:    #4A7C59;
-  --phosphor-dim:#3A6040;
-  --phosphor-glow: rgba(74,124,89,0.12);
+  --phosphor:    #51A06A;
+  --phosphor-dim:#2C5340;
+  --phosphor-glow: rgba(81,160,106,0.12);
 
-  --danger:      #E06060;
-  --danger-dim:  #6B2020;
-  --danger-glow: rgba(224,96,96,0.12);
+  --danger:      #E8574C;
+  --danger-dim:  #5A2420;
+  --danger-glow: rgba(232,87,76,0.12);
 
-  --ice:         #7A9FD0;
-  --ice-dim:     #2A4060;
+  --ice:         #7AAEE8;
+  --ice-dim:     #20364C;
 
-  --muted:       #5A6A58;
-  --text:        #D8E0D0;
-  --text-dim:    #9BAAB8;
+  --muted:       #51615B;
+  --text:        #DEE6E1;
+  --text-dim:    #8DA09C;
 
-  --mono: 'Share Tech Mono', monospace;
-  --cond: 'Barlow Condensed', sans-serif;
-  --body: 'Exo 2', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --cond: 'Saira Condensed', sans-serif;
+  --body: 'Saira', system-ui, sans-serif;
 }
 
 /* ─── RESET ────────────────────────────────────────────────────────── */
@@ -79,6 +85,8 @@ html, body, #root {
   font-family: var(--body);
   font-size: 13px;
   line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Subtle scanline overlay */
@@ -108,7 +116,7 @@ body::after {
   font-family: var(--mono) !important;
 }
 .leaflet-tile {
-  filter: brightness(0.85) saturate(0.6) !important;
+  filter: brightness(0.62) saturate(0.45) contrast(1.05) hue-rotate(-8deg) !important;
 }
 .leaflet-control-zoom {
   border: 1px solid var(--bg-border) !important;
