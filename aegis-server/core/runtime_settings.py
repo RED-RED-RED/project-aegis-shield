@@ -30,9 +30,12 @@ EDITABLE: dict[str, dict] = {
     "pushover_token":          {"type": "str",   "group": "Notifications", "label": "API token", "secret": True},
     "pushover_user":           {"type": "str",   "group": "Notifications", "label": "User / group key", "secret": True},
     "pushover_min_level":      {"type": "enum",  "group": "Notifications", "label": "Min level", "choices": ["medium", "high"]},
-    "pushover_cooldown_s":     {"type": "int",   "group": "Notifications", "label": "Per-drone cooldown (s)"},
+    "pushover_cooldown_s":     {"type": "int",   "group": "Notifications", "label": "Per-drone re-alert (s)"},
     "pushover_max_per_hour":   {"type": "int",   "group": "Notifications", "label": "Max per hour"},
     "pushover_emergency_categories": {"type": "str", "group": "Notifications", "label": "Emergency categories (CSV)"},
+    # Emergency (Watchlist/Hostile) repeat cadence — how a priority-2 push nags
+    "pushover_emergency_retry_s":  {"type": "int", "group": "Notifications", "label": "Emergency re-alert every (s, min 30)"},
+    "pushover_emergency_expire_s": {"type": "int", "group": "Notifications", "label": "Emergency stops after (s)"},
     "pushover_health_enabled": {"type": "bool",  "group": "Notifications", "label": "Critical health pushes"},
     "pushover_temp_crit_c":    {"type": "float", "group": "Notifications", "label": "Temp critical (°C)"},
     "pushover_disk_crit_pct":  {"type": "float", "group": "Notifications", "label": "Disk critical (%)"},
@@ -47,6 +50,7 @@ EDITABLE: dict[str, dict] = {
 READONLY_DISPLAY = [
     "db_host", "db_name", "mqtt_host", "mqtt_port",
     "alert_speed_threshold_ms", "alert_no_rid_min_alt_m", "alert_operator_max_km",
+    "alert_dedup_window_s",
     "rf_alert_min_confidence", "rf_correlation_radius_m",
     "flight_gap_s", "flight_min_points",
     "server_health_interval_s", "ws_broadcast_interval_ms",
