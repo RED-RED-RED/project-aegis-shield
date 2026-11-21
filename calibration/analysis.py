@@ -34,7 +34,7 @@ def text_report(
 
     lines += [
         "═" * w,
-        "  AEGIS CALIBRATION REPORT".center(w),
+        "  KESTREL CALIBRATION REPORT".center(w),
         "═" * w,
         "",
     ]

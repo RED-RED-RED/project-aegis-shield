@@ -2,7 +2,7 @@
 """
 calibration/calibrate.py
 ========================
-CLI entry point for the AEGIS calibration utility.
+CLI entry point for the KESTREL calibration utility.
 
 Workflow
 --------
@@ -87,7 +87,7 @@ DIM    = lambda t: c(t, 2)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AEGIS path-loss calibration utility",
+        description="KESTREL path-loss calibration utility",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -123,7 +123,7 @@ def main():
 
     args = parser.parse_args()
 
-    print(f"\n{BOLD('AEGIS Calibration Utility')}")
+    print(f"\n{BOLD('KESTREL Calibration Utility')}")
     print(f"Server:   {args.server}")
     print(f"Drone ID: {args.drone_id}")
 
@@ -288,7 +288,7 @@ def main():
 
     print(f"\n{GREEN('✓')} Calibration complete.\n")
     print(DIM("  Restart the server to load the new calibration:"))
-    print(DIM("  cd server/docker && docker compose restart aegis-server\n"))
+    print(DIM("  cd server/docker && docker compose restart kestrel-server\n"))
 
 
 if __name__ == "__main__":

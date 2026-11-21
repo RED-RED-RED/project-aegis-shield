@@ -1,8 +1,8 @@
 #!/bin/bash
 # scripts/setup-wireguard.sh
 # ============================================================
-# Sets up a WireGuard VPN so ARGUS nodes connect to the
-# AEGIS platform over an encrypted tunnel — required if nodes
+# Sets up a WireGuard VPN so KESTREL nodes connect to the
+# KESTREL platform over an encrypted tunnel — required if nodes
 # are deployed outside your LAN (field deployment, rooftops, etc.)
 #
 # Run on SERVER first, then on each NODE.
@@ -61,7 +61,7 @@ PrivateKey = ${SERVER_PRIV}
 PostUp   = iptables -A FORWARD -i %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 
-# ── Add a [Peer] block below for each ARGUS node ──
+# ── Add a [Peer] block below for each KESTREL node ──
 # Generate node keys with: wg genkey | tee node01_priv | wg pubkey > node01_pub
 # Then add:
 #
@@ -151,7 +151,7 @@ EOF
     echo "  Then restart the server:"
     echo "  sudo systemctl restart wg-quick@${WG_IFACE}"
     echo ""
-    echo "  Update argus-node config.yaml:"
+    echo "  Update kestrel-node config.yaml:"
     echo "  mqtt.host: ${SERVER_VPN_IP}"
     echo "═══════════════════════════════════════════"
     ;;

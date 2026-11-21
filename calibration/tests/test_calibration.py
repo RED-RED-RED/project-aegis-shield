@@ -38,7 +38,7 @@ def synth_rssi(dist_m: float, rssi_ref=TRUE_RSSI_REF, n=TRUE_N, noise=0.0) -> fl
     return rssi_ref - 10 * n * math.log10(max(dist_m, 1.0)) + noise
 
 def synth_samples(
-    node_id:      str = "ARGUS-01",
+    node_id:      str = "KN-01",
     node_lat:     float = 40.75,
     node_lon:     float = -73.99,
     n_samples:    int = 200,
@@ -83,8 +83,8 @@ class TestCalibrationEngine:
         samples = synth_samples(n_samples=200, noise_std=NOISE_STD_DBM)
         results = engine.fit(samples)
 
-        assert "ARGUS-01" in results
-        r = results["ARGUS-01"]
+        assert "KN-01" in results
+        r = results["KN-01"]
         # With 5 dB noise, 200 samples → expect n within ±0.3
         assert abs(r.fitted_n - TRUE_N) < 0.3, \
             f"Fitted n={r.fitted_n:.3f}, truth={TRUE_N}"
@@ -93,7 +93,7 @@ class TestCalibrationEngine:
         engine  = self._engine()
         samples = synth_samples(n_samples=200, noise_std=NOISE_STD_DBM)
         results = engine.fit(samples)
-        r = results["ARGUS-01"]
+        r = results["KN-01"]
         # With 5 dB noise, RSSI_REF should be within ±6 dBm
         assert abs(r.fitted_rssi_ref - TRUE_RSSI_REF) < 6.0, \
             f"Fitted RSSI_REF={r.fitted_rssi_ref:.1f}, truth={TRUE_RSSI_REF}"
@@ -103,13 +103,13 @@ class TestCalibrationEngine:
         engine  = self._engine()
         samples = synth_samples(n_samples=100, noise_std=0.0)
         results = engine.fit(samples)
-        assert results["ARGUS-01"].r_squared >= 0.99
+        assert results["KN-01"].r_squared >= 0.99
 
     def test_r_squared_decreases_with_more_noise(self):
         """Higher noise → lower R²."""
         engine = self._engine()
-        r_clean  = engine.fit(synth_samples(noise_std=0.0))["ARGUS-01"].r_squared
-        r_noisy  = engine.fit(synth_samples(noise_std=10.0))["ARGUS-01"].r_squared
+        r_clean  = engine.fit(synth_samples(noise_std=0.0))["KN-01"].r_squared
+        r_noisy  = engine.fit(synth_samples(noise_std=10.0))["KN-01"].r_squared
         assert r_clean > r_noisy
 
     def test_rmse_bounded_for_reasonable_noise(self):
@@ -117,7 +117,7 @@ class TestCalibrationEngine:
         engine  = self._engine()
         samples = synth_samples(n_samples=300, noise_std=NOISE_STD_DBM)
         results = engine.fit(samples)
-        assert results["ARGUS-01"].rmse_m < 200
+        assert results["KN-01"].rmse_m < 200
 
     def test_multi_node_independent_fit(self):
         """Each node should be fitted independently and return separate results.
@@ -125,35 +125,35 @@ class TestCalibrationEngine:
         (-105 dBm) across the distance range so clamping doesn't corrupt the fit.
         """
         engine = self._engine()
-        # ARGUS-01: low n, short range  → lower RSSI values stay above -105
-        # ARGUS-02: medium n, use closer range so RSSI doesn't clamp
-        # ARGUS-03: low n, shifted RSSI_REF
+        # KN-01: low n, short range  → lower RSSI values stay above -105
+        # KN-02: medium n, use closer range so RSSI doesn't clamp
+        # KN-03: low n, shifted RSSI_REF
         samples = (
-            synth_samples("ARGUS-01", rssi_ref=-20.0, n=2.3, dist_range=(30, 500), seed=1) +
-            synth_samples("ARGUS-02", rssi_ref=-15.0, n=2.9, dist_range=(30, 400), seed=2) +
-            synth_samples("ARGUS-03", rssi_ref=-18.0, n=2.1, dist_range=(30, 500), seed=3)
+            synth_samples("KN-01", rssi_ref=-20.0, n=2.3, dist_range=(30, 500), seed=1) +
+            synth_samples("KN-02", rssi_ref=-15.0, n=2.9, dist_range=(30, 400), seed=2) +
+            synth_samples("KN-03", rssi_ref=-18.0, n=2.1, dist_range=(30, 500), seed=3)
         )
         results = engine.fit(samples)
-        assert set(results.keys()) == {"ARGUS-01", "ARGUS-02", "ARGUS-03"}
+        assert set(results.keys()) == {"KN-01", "KN-02", "KN-03"}
 
         # Each node's fitted n should be within 0.4 of its own true value
-        assert abs(results["ARGUS-01"].fitted_n - 2.3) < 0.4
-        assert abs(results["ARGUS-02"].fitted_n - 2.9) < 0.4
-        assert abs(results["ARGUS-03"].fitted_n - 2.1) < 0.4
+        assert abs(results["KN-01"].fitted_n - 2.3) < 0.4
+        assert abs(results["KN-02"].fitted_n - 2.9) < 0.4
+        assert abs(results["KN-03"].fitted_n - 2.1) < 0.4
 
-        # ARGUS-01 and ARGUS-03 should have clearly different fitted n
-        assert abs(results["ARGUS-01"].fitted_n - results["ARGUS-03"].fitted_n) < 0.5
+        # KN-01 and KN-03 should have clearly different fitted n
+        assert abs(results["KN-01"].fitted_n - results["KN-03"].fitted_n) < 0.5
 
     def test_global_fallback_for_sparse_node(self):
         """Node with < MIN_SAMPLES gets global-fallback result."""
         engine = self._engine()
         samples = (
-            synth_samples("ARGUS-01", n_samples=200, seed=1) +
-            synth_samples("ARGUS-02", n_samples=5, seed=2)   # too few
+            synth_samples("KN-01", n_samples=200, seed=1) +
+            synth_samples("KN-02", n_samples=5, seed=2)   # too few
         )
         results = engine.fit(samples, global_fallback=True)
-        assert "ARGUS-02" in results
-        assert any("global model" in w for w in results["ARGUS-02"].warnings)
+        assert "KN-02" in results
+        assert any("global model" in w for w in results["KN-02"].warnings)
 
     def test_warning_for_implausible_n(self):
         """Heavily obstructed environment may produce n outside normal range."""
@@ -162,7 +162,7 @@ class TestCalibrationEngine:
         samples = synth_samples(n=4.8, noise_std=1.0)
         results = engine.fit(samples)
         # The fitted value may be outside range → should warn
-        r = results["ARGUS-01"]
+        r = results["KN-01"]
         if r.fitted_n > 5.0 or r.fitted_n < 1.5:
             assert r.warnings
 
@@ -172,13 +172,13 @@ class TestCalibrationEngine:
         samples = synth_samples(dist_range=(90, 110))  # only 20m spread
         results = engine.fit(samples)
         assert any("range" in w.lower() or "100m" in w or "50" in w
-                   for w in results["ARGUS-01"].warnings)
+                   for w in results["KN-01"].warnings)
 
     def test_quality_label_ordering(self):
         """Better fit → higher quality label."""
         engine = self._engine()
-        clean  = engine.fit(synth_samples(noise_std=0.5))["ARGUS-01"]
-        noisy  = engine.fit(synth_samples(noise_std=12.0))["ARGUS-01"]
+        clean  = engine.fit(synth_samples(noise_std=0.5))["KN-01"]
+        noisy  = engine.fit(synth_samples(noise_std=12.0))["KN-01"]
         quality_rank = {"excellent": 4, "good": 3, "acceptable": 2, "poor": 1}
         assert quality_rank[clean.quality] >= quality_rank[noisy.quality]
 
@@ -186,7 +186,7 @@ class TestCalibrationEngine:
         """to_config_dict() should include all required keys."""
         engine  = self._engine()
         results = engine.fit(synth_samples())
-        d = results["ARGUS-01"].to_config_dict()
+        d = results["KN-01"].to_config_dict()
         assert all(k in d for k in ["rssi_ref_dbm","path_loss_exp","quality","r_squared","rmse_m"])
 
     def test_filters_extreme_rssi(self):
@@ -201,8 +201,8 @@ class TestCalibrationEngine:
         results_with = engine.fit(samples + bad)
         results_base = engine.fit(samples)
         # Both should produce valid results; bad samples shouldn't wildly change fit
-        r_with = results_with["ARGUS-01"]
-        r_base = results_base["ARGUS-01"]
+        r_with = results_with["KN-01"]
+        r_base = results_base["KN-01"]
         assert abs(r_with.fitted_n - r_base.fitted_n) < 0.5
 
 
@@ -314,9 +314,9 @@ class TestCollector:
             TruthPoint(ts=base_ts + i*2, lat=40.75 + i*0.001, lon=-73.99, alt=50.0)
             for i in range(60)
         ]
-        nodes = [{"node_id":"ARGUS-01","status":"online","lat":40.76,"lon":-74.00,"alt":10.0}]
+        nodes = [{"node_id":"KN-01","status":"online","lat":40.76,"lon":-74.00,"alt":10.0}]
         detections = [
-            {"node_id":"ARGUS-01","rssi":-72,"detected_at":base_ts+i*5,"drone_lat":40.75,"drone_lon":-73.99}
+            {"node_id":"KN-01","rssi":-72,"detected_at":base_ts+i*5,"drone_lat":40.75,"drone_lon":-73.99}
             for i in range(20)
         ]
         samples = build_samples(detections, track, nodes, truth_source="track")
@@ -325,9 +325,9 @@ class TestCollector:
 
     def test_build_samples_rid_broadcast(self):
         """Build samples using RID broadcast as truth source."""
-        nodes = [{"node_id":"ARGUS-01","status":"online","lat":40.760,"lon":-74.000,"alt":0.0}]
+        nodes = [{"node_id":"KN-01","status":"online","lat":40.760,"lon":-74.000,"alt":0.0}]
         detections = [
-            {"node_id":"ARGUS-01","rssi":-75,
+            {"node_id":"KN-01","rssi":-75,
              "detected_at":1710000000.0 + i,
              "drone_lat":40.755,"drone_lon":-73.995}
             for i in range(30)
@@ -338,9 +338,9 @@ class TestCollector:
 
     def test_build_samples_skips_weak_rssi(self):
         """Readings below -105 dBm should be excluded."""
-        nodes = [{"node_id":"ARGUS-01","status":"online","lat":40.76,"lon":-74.00,"alt":0.0}]
+        nodes = [{"node_id":"KN-01","status":"online","lat":40.76,"lon":-74.00,"alt":0.0}]
         detections = [
-            {"node_id":"ARGUS-01","rssi":-110,
+            {"node_id":"KN-01","rssi":-110,
              "detected_at":1710000000.0, "drone_lat":40.755,"drone_lon":-73.995}
         ]
         samples = build_samples(detections, [], nodes, truth_source="rid_broadcast")
@@ -351,7 +351,7 @@ class TestCollector:
 
 class TestConfigWriter:
 
-    def _make_result(self, node_id="ARGUS-01", n=2.7, rref=-20.0, r2=0.85, rmse=60.0, count=200):
+    def _make_result(self, node_id="KN-01", n=2.7, rref=-20.0, r2=0.85, rmse=60.0, count=200):
         return CalibrationResult(
             node_id         = node_id,
             fitted_rssi_ref = rref,
@@ -370,8 +370,8 @@ class TestConfigWriter:
     def test_write_yaml_creates_file(self, tmp_path):
         import yaml
         results = {
-            "ARGUS-01": self._make_result("ARGUS-01"),
-            "ARGUS-02": self._make_result("ARGUS-02", n=3.1, r2=0.79),
+            "KN-01": self._make_result("KN-01"),
+            "KN-02": self._make_result("KN-02", n=3.1, r2=0.79),
         }
         out = tmp_path / "cal.yaml"
         write_calibration_yaml(results, out, notes="test run")
@@ -379,38 +379,38 @@ class TestConfigWriter:
         assert out.exists()
         doc = yaml.safe_load(out.read_text())
         assert "nodes" in doc
-        assert "ARGUS-01" in doc["nodes"]
+        assert "KN-01" in doc["nodes"]
         assert "global" in doc
         assert doc["notes"] == "test run"
 
     def test_yaml_contains_correct_values(self, tmp_path):
         import yaml
-        r = self._make_result("ARGUS-01", n=2.45, rref=-18.4)
+        r = self._make_result("KN-01", n=2.45, rref=-18.4)
         out = tmp_path / "cal.yaml"
-        write_calibration_yaml({"ARGUS-01": r}, out)
+        write_calibration_yaml({"KN-01": r}, out)
 
         doc = yaml.safe_load(out.read_text())
-        n01 = doc["nodes"]["ARGUS-01"]
+        n01 = doc["nodes"]["KN-01"]
         assert abs(n01["path_loss_exp"] - 2.45) < 0.01
         assert abs(n01["rssi_ref_dbm"]  - (-18.4)) < 0.1
 
     def test_global_is_weighted_average(self, tmp_path):
         import yaml
         results = {
-            "ARGUS-01": self._make_result("ARGUS-01", n=2.5, count=300),
-            "ARGUS-02": self._make_result("ARGUS-02", n=3.0, count=100),
+            "KN-01": self._make_result("KN-01", n=2.5, count=300),
+            "KN-02": self._make_result("KN-02", n=3.0, count=100),
         }
         out = tmp_path / "cal.yaml"
         write_calibration_yaml(results, out)
         doc = yaml.safe_load(out.read_text())
-        # Weighted toward ARGUS-01 (more samples, same R²) → global n < 2.75
+        # Weighted toward KN-01 (more samples, same R²) → global n < 2.75
         global_n = doc["global"]["path_loss_exp"]
         assert 2.5 <= global_n <= 3.0
-        assert abs(global_n - 2.5) < abs(global_n - 3.0)  # Closer to ARGUS-01
+        assert abs(global_n - 2.5) < abs(global_n - 3.0)  # Closer to KN-01
 
     def test_patch_trilateration_py(self, tmp_path):
         """patch_trilateration_py modifies the constants in a copy of the file."""
-        src = Path(__file__).parent.parent.parent / "aegis-server/analysis/trilateration.py"
+        src = Path(__file__).parent.parent.parent / "kestrel-server/analysis/trilateration.py"
         if not src.exists():
             pytest.skip("trilateration.py not found")
 
@@ -418,7 +418,7 @@ class TestConfigWriter:
         copy = tmp_path / "trilateration.py"
         copy.write_text(src.read_text())
 
-        r = self._make_result("ARGUS-01", n=3.14, rref=-19.5)
+        r = self._make_result("KN-01", n=3.14, rref=-19.5)
         diff = patch_trilateration_py(r, py_path=copy, dry_run=False)
 
         content = copy.read_text()
@@ -427,7 +427,7 @@ class TestConfigWriter:
         assert "diff" in diff.lower() or "→" in diff
 
     def test_patch_dry_run_does_not_modify(self, tmp_path):
-        src = Path(__file__).parent.parent.parent / "aegis-server/analysis/trilateration.py"
+        src = Path(__file__).parent.parent.parent / "kestrel-server/analysis/trilateration.py"
         if not src.exists():
             pytest.skip("trilateration.py not found")
 
@@ -435,17 +435,17 @@ class TestConfigWriter:
         orig = src.read_text()
         copy.write_text(orig)
 
-        r = self._make_result("ARGUS-01", n=9.99, rref=-99.0)
+        r = self._make_result("KN-01", n=9.99, rref=-99.0)
         patch_trilateration_py(r, py_path=copy, dry_run=True)
 
         assert copy.read_text() == orig  # Unchanged
 
     def test_generate_patch_snippet(self):
         results = {
-            "ARGUS-01": self._make_result("ARGUS-01", n=2.45),
-            "ARGUS-02": self._make_result("ARGUS-02", n=3.1, r2=0.65),
+            "KN-01": self._make_result("KN-01", n=2.45),
+            "KN-02": self._make_result("KN-02", n=3.1, r2=0.65),
         }
         snippet = generate_patch_snippet(results)
-        assert "ARGUS-01" in snippet
-        assert "ARGUS-02" in snippet
+        assert "KN-01" in snippet
+        assert "KN-02" in snippet
         assert "n=" in snippet

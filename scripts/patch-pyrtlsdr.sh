@@ -20,12 +20,12 @@
 # Usage:
 #   bash scripts/patch-pyrtlsdr.sh [/path/to/venv]
 #
-# Default venv path: /opt/argus-node/venv
+# Default venv path: /opt/kestrel-node/venv
 # ============================================================
 
 set -euo pipefail
 
-VENV_DIR="${1:-/opt/argus-node/venv}"
+VENV_DIR="${1:-/opt/kestrel-node/venv}"
 PYTHON="$VENV_DIR/bin/python3"
 
 if [[ ! -x "$PYTHON" ]]; then

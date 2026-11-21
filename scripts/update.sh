@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/update.sh
 # ============================================================
-# Update an existing AEGIS install to the latest committed code.
+# Update an existing KESTREL install to the latest committed code.
 #
 # Usage:
 #   sudo bash scripts/update.sh server    # Pull latest, rebuild UI, rebuild+restart containers
@@ -12,9 +12,9 @@
 #   --skip-ui        server only: don't rebuild the dashboard
 #   --no-pull        skip the git update (rebuild from the current checkout)
 #
-# The server path assumes the Docker stack from deploy-aegis-server.sh.
-# The node path assumes the systemd install from deploy-argus-node.sh
-# (repo at /opt/argus-node, venv at /opt/argus-node/venv).
+# The server path assumes the Docker stack from deploy-kestrel-server.sh.
+# The node path assumes the systemd install from deploy-kestrel-node.sh
+# (repo at /opt/kestrel-node, venv at /opt/kestrel-node/venv).
 # ============================================================
 
 set -euo pipefail
@@ -28,10 +28,10 @@ info() { echo -e "${BLUE}  →${NC} $*"; }
 step() { echo -e "\n${BOLD}[$1]${NC} $2"; }
 
 # Repo root = parent of this script's directory. Each machine updates its own
-# checkout (server clone, or /opt/argus-node on a node).
+# checkout (server clone, or /opt/kestrel-node on a node).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_FILE="$REPO_ROOT/aegis-server/docker/docker-compose.yml"
+COMPOSE_FILE="$REPO_ROOT/kestrel-server/docker/docker-compose.yml"
 DC="docker compose -f $COMPOSE_FILE"
 
 MODE="${1:-}"; shift 2>/dev/null || true
@@ -67,24 +67,24 @@ update_server() {
     warn "Skipping git pull (--no-pull); rebuilding $(current_commit)"
   fi
 
-  step "2/4" "Rebuilding dashboard (AEGIS Shield)"
+  step "2/4" "Rebuilding dashboard (KESTREL dashboard)"
   if [[ "$SKIP_UI" == false ]]; then
     command -v npm &>/dev/null || fail "npm not found — install Node.js or re-run with --skip-ui"
-    ( cd "$REPO_ROOT/aegis-shield" && npm install --silent && npm run build )
-    [[ -f "$REPO_ROOT/aegis-shield/dist/index.html" ]] || fail "UI build produced no dist/index.html"
-    # nginx serves aegis-shield/dist as a read-only volume, so the new build is
+    ( cd "$REPO_ROOT/kestrel-dashboard" && npm install --silent && npm run build )
+    [[ -f "$REPO_ROOT/kestrel-dashboard/dist/index.html" ]] || fail "UI build produced no dist/index.html"
+    # nginx serves kestrel-dashboard/dist as a read-only volume, so the new build is
     # live on the next request — no container restart needed for the UI.
-    ok "Dashboard rebuilt → aegis-shield/dist/"
+    ok "Dashboard rebuilt → kestrel-dashboard/dist/"
   else
     warn "Skipping UI build (--skip-ui)"
   fi
 
   step "3/4" "Rebuilding and restarting the API container"
-  # Recreates the aegis-server image with the new code. init_db() runs on
+  # Recreates the kestrel-server image with the new code. init_db() runs on
   # startup and creates any new tables (CREATE TABLE IF NOT EXISTS), so there
   # is no separate migration step.
-  $DC up -d --build aegis-server
-  ok "aegis-server rebuilt and restarted"
+  $DC up -d --build kestrel-server
+  ok "kestrel-server rebuilt and restarted"
 
   step "4/4" "Health check"
   sleep 3
@@ -93,7 +93,7 @@ update_server() {
   if [[ "$status" == "200" ]]; then
     ok "API healthy (HTTP 200) at http://localhost:8000/health"
   else
-    warn "API returned HTTP $status — check logs: $DC logs --tail=40 aegis-server"
+    warn "API returned HTTP $status — check logs: $DC logs --tail=40 kestrel-server"
   fi
   echo -e "\n${BOLD}Server updated to $(current_commit).${NC}"
 }
@@ -101,8 +101,8 @@ update_server() {
 # ── node ────────────────────────────────────────────────────────────────────
 update_node() {
   local venv="$REPO_ROOT/venv"
-  local reqs="$REPO_ROOT/argus-node/requirements.txt"
-  [[ -f "$reqs" ]] || fail "Node requirements not found at $reqs — is this an ARGUS node?"
+  local reqs="$REPO_ROOT/kestrel-node/requirements.txt"
+  [[ -f "$reqs" ]] || fail "Node requirements not found at $reqs — is this an KESTREL node?"
   [[ $EUID -eq 0 ]] || fail "Run as root: sudo bash scripts/update.sh node"
 
   step "1/4" "Fetching latest code"
@@ -116,7 +116,7 @@ update_node() {
   fi
 
   step "2/4" "Updating Python dependencies"
-  [[ -x "$venv/bin/pip" ]] || fail "venv not found at $venv — run deploy-argus-node.sh first"
+  [[ -x "$venv/bin/pip" ]] || fail "venv not found at $venv — run deploy-kestrel-node.sh first"
   "$venv/bin/pip" install --upgrade pip -q
   "$venv/bin/pip" install -r "$reqs" -q
   ok "Dependencies up to date"
@@ -131,19 +131,19 @@ update_node() {
   fi
 
   step "4/4" "Restarting the node service"
-  systemctl restart argus-node.service
+  systemctl restart kestrel-node.service
   sleep 2
-  if systemctl is-active --quiet argus-node.service; then
-    ok "argus-node.service is running"
+  if systemctl is-active --quiet kestrel-node.service; then
+    ok "kestrel-node.service is running"
   else
-    warn "argus-node.service is not active — check: journalctl -u argus-node -n 40"
+    warn "kestrel-node.service is not active — check: journalctl -u kestrel-node -n 40"
   fi
   echo -e "\n${BOLD}Node updated to $(current_commit).${NC}"
 }
 
 # ── version ───────────────────────────────────────────────────────────────────
 show_version() {
-  echo -e "${BOLD}AEGIS — version${NC}"
+  echo -e "${BOLD}KESTREL — version${NC}"
   echo "  commit : $(current_commit)"
   echo "  branch : $(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
   echo "  date   : $(git -C "$REPO_ROOT" log -1 --format=%cd --date=short 2>/dev/null || echo unknown)"

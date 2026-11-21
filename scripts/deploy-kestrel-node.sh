@@ -1,0 +1,388 @@
+#!/usr/bin/env bash
+# scripts/deploy-kestrel-node.sh
+# ============================================================
+# Automated KESTREL Node deployment wizard.
+# Run on a fresh Raspberry Pi OS Lite 64-bit (Bookworm) as root.
+#
+# Usage:
+#   sudo bash deploy-kestrel-node.sh
+#
+# Unattended (CI / pre-provisioning):
+#   sudo bash deploy-kestrel-node.sh \
+#     --unattended \
+#     --node-id KN-01 \
+#     --server-ip 192.168.1.100 \
+#     --mqtt-password your_password
+#
+# MQTT username is always "rid" — set by the KESTREL Server at deploy time.
+# ============================================================
+
+set -euo pipefail
+
+# ── Colours ──────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+ok()   { echo -e "${GREEN}  ✓${NC} $*"; }
+fail() { echo -e "${RED}  ✗ $*${NC}"; exit 1; }
+warn() { echo -e "${YELLOW}  !${NC} $*"; }
+info() { echo -e "${BLUE}  →${NC} $*"; }
+step() { echo -e "\n${BOLD}[$1/8]${NC} $2"; }
+
+REPO_URL="https://github.com/RED-RED-RED/project-kestrel.git"
+INSTALL_DIR="/opt/kestrel-node"
+CONFIG_DIR="/etc/kestrel-node"
+LOG_DIR="/var/log/kestrel-node"
+
+# ── Argument parsing ─────────────────────────────────────────────────────
+UNATTENDED=false
+OPT_NODE_ID=""; OPT_SERVER_IP=""; OPT_MQTT_PASS=""
+OPT_WIFI_IFACE="wlan1"; OPT_WIFI_IFACE_5G=""; OPT_SDR=false
+OPT_REPO=""; OPT_GPS_MODE="usb"; OPT_MQTT_FALLBACK=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --unattended)      UNATTENDED=true;;
+    --node-id)         OPT_NODE_ID="$2";       shift;;
+    --server-ip)       OPT_SERVER_IP="$2";     shift;;
+    --mqtt-fallback)   OPT_MQTT_FALLBACK="$2"; shift;;
+    --mqtt-password)   OPT_MQTT_PASS="$2";     shift;;
+    --wifi-iface)      OPT_WIFI_IFACE="$2";    shift;;
+    --wifi-iface-5g)   OPT_WIFI_IFACE_5G="$2"; shift;;
+    --enable-sdr)      OPT_SDR=true;;
+    --repo)            OPT_REPO="$2";          shift;;
+    --gps-mode)        OPT_GPS_MODE="$2";      shift;;
+    *) warn "Unknown argument: $1";;
+  esac
+  shift 2>/dev/null || true
+done
+
+[[ -n "$OPT_REPO" ]] && REPO_URL="$OPT_REPO"
+[[ $EUID -eq 0 ]]    || fail "Must run as root:  sudo bash $0"
+
+# ── Banner ───────────────────────────────────────────────────────────────
+clear
+echo ""
+echo -e "${BOLD}╔═══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║        KESTREL Node  —  Deployment Wizard       ║${NC}"
+echo -e "${BOLD}║      KESTREL Airspace Protection Platform       ║${NC}"
+echo -e "${BOLD}╚═══════════════════════════════════════════════╝${NC}"
+echo ""
+
+# ── Interactive prompts ───────────────────────────────────────────────────
+if [[ "$UNATTENDED" == false ]]; then
+  DEFAULT_ID=$(hostname | tr '[:lower:]' '[:upper:]')
+  echo "  Configure this Pi as an KESTREL sensor node."
+  echo "  Press Enter to accept defaults shown in [brackets]."
+  echo ""
+
+  echo "  Node ID"
+  echo "  A unique name for this sensor node — used in MQTT topics"
+  echo "  and displayed in the KESTREL dashboard."
+  read -rp "    ID [${DEFAULT_ID}]: " NODE_ID
+  NODE_ID="${NODE_ID:-$DEFAULT_ID}"
+  echo ""
+
+  echo "  KESTREL Server IP"
+  echo "  The IP address of the machine running the KESTREL Server stack."
+  echo "  Check DEPLOYMENT.md on the server if you are unsure."
+  read -rp "    Server IP: " SERVER_IP
+  [[ -n "$SERVER_IP" ]] || fail "Server IP is required"
+  echo ""
+
+  echo "  Tailscale fallback (optional)"
+  echo "  The server's Tailscale name (e.g. kestrel-server). If set, a node that"
+  echo "  can't reach the LAN IP above reconnects over Tailscale, then flips back."
+  echo "  Requires Tailscale running on this node and the server. Leave blank to skip."
+  read -rp "    Server Tailscale name: " MQTT_FALLBACK
+  MQTT_FALLBACK="${MQTT_FALLBACK:-}"
+  echo ""
+
+  echo "  MQTT password"
+  echo "  The MQTT broker password set during KESTREL Server deployment."
+  echo "  Find it in DEPLOYMENT.md or kestrel-server/docker/.env on the server."
+  while true; do
+    read -rsp "    Password: " MQTT_PASS; echo
+    [[ -n "$MQTT_PASS" ]] || { echo -e "${RED}  Password is required.${NC}"; continue; }
+    read -rsp "    Confirm password: " MQTT_PASS_CONFIRM; echo
+    [[ "$MQTT_PASS" == "$MQTT_PASS_CONFIRM" ]] && break
+    echo -e "${RED}  Passwords do not match. Try again.${NC}"
+  done
+  MQTT_USER="rid"
+  echo ""
+
+  read -rp "  Primary Wi-Fi adapter (2.4 GHz) [wlan1]: " WIFI_IFACE
+  WIFI_IFACE="${WIFI_IFACE:-wlan1}"
+
+  read -rp "  Secondary Wi-Fi adapter (5 GHz, leave blank if not fitted): " WIFI_IFACE_5G
+  WIFI_IFACE_5G="${WIFI_IFACE_5G:-}"
+
+  read -rp "  Enable RTL-SDR scanner? [y/N]: " SDR_RESP
+  [[ "${SDR_RESP,,}" == "y" ]] && ENABLE_SDR=true || ENABLE_SDR=false
+
+  read -rp "  GPS mode — usb (NEO-M9N) or uart (legacy NEO-M8N) [usb]: " GPS_MODE_RESP
+  GPS_MODE="${GPS_MODE_RESP:-usb}"
+else
+  NODE_ID="${OPT_NODE_ID:-$(hostname | tr '[:lower:]' '[:upper:]')}"
+  SERVER_IP="$OPT_SERVER_IP"
+  MQTT_USER="rid"
+  MQTT_PASS="$OPT_MQTT_PASS"
+  MQTT_FALLBACK="$OPT_MQTT_FALLBACK"
+  WIFI_IFACE="$OPT_WIFI_IFACE"
+  WIFI_IFACE_5G="$OPT_WIFI_IFACE_5G"
+  ENABLE_SDR="$OPT_SDR"
+  GPS_MODE="$OPT_GPS_MODE"
+  [[ -n "$SERVER_IP" ]] || fail "--server-ip is required in unattended mode"
+  [[ -n "$MQTT_PASS"  ]] || fail "--mqtt-password is required in unattended mode"
+fi
+
+SDR_STR="false";   [[ "$ENABLE_SDR"    == true ]] && SDR_STR="true"
+WIFI_5G_STR="false"; [[ -n "$WIFI_IFACE_5G" ]] && WIFI_5G_STR="true"
+GPS_MODE="${GPS_MODE:-usb}"
+
+echo ""
+info "Node ID    : ${BOLD}${NODE_ID}${NC}"
+info "Server     : ${BOLD}${SERVER_IP}${NC}"
+info "Wi-Fi 2.4G : ${WIFI_IFACE}"
+info "Wi-Fi 5G   : ${WIFI_IFACE_5G:-(not fitted)}"
+info "SDR        : ${SDR_STR}"
+info "GPS mode   : ${GPS_MODE}"
+echo ""
+
+# ── 1/8  System packages ─────────────────────────────────────────────────
+step 1 "System packages"
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+  python3 python3-pip python3-venv python3-dev gcc \
+  git curl wget \
+  aircrack-ng iw wireless-tools rfkill \
+  bluez bluez-tools \
+  rtl-sdr librtlsdr-dev \
+  usbutils tcpdump mosquitto-clients
+ok "Packages installed"
+
+# ── 2/8  Hardware configuration ──────────────────────────────────────────
+step 2 "Hardware configuration"
+
+# RTL-SDR: blacklist DVB drivers so the dongle is claimed by rtl-sdr, not the
+# kernel DVB stack.  Both modules must be listed — rtl2832 is the demodulator
+# that dvb_usb_rtl28xxu depends on; blacklisting only one leaves the other
+# able to load.  modprobe -r evicts any already-loaded instance immediately.
+echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/rtl-sdr-blacklist.conf
+echo "blacklist rtl2832"         >> /etc/modprobe.d/rtl-sdr-blacklist.conf
+modprobe -r dvb_usb_rtl28xxu 2>/dev/null || true
+modprobe -r rtl2832            2>/dev/null || true
+cat > /etc/udev/rules.d/20-rtlsdr.rules << 'UDEV'
+SUBSYSTEM=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", \
+  GROUP="plugdev", MODE="0666", SYMLINK+="rtl_sdr"
+UDEV
+ok "RTL-SDR udev rules set"
+
+# u-blox USB GPS udev rule — stable /dev/ttyGPS symlink for NEO-M9N
+# Vendor 1546 = u-blox, Product 01a9 = NEO-M9N
+cat > /etc/udev/rules.d/21-ublox-gps.rules << 'UDEV'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1546", ATTRS{idProduct}=="01a9", \
+  SYMLINK+="ttyGPS", MODE="0666"
+UDEV
+ok "u-blox GPS udev rule set (/dev/ttyGPS symlink for NEO-M9N)"
+
+udevadm control --reload-rules
+udevadm trigger
+
+# UART-specific setup — only needed for legacy UART GPS (mode=uart)
+if [[ "$GPS_MODE" == "uart" ]]; then
+  info "Configuring UART for legacy GPS…"
+  for CFG in /boot/firmware/config.txt /boot/config.txt; do
+    [[ -f "$CFG" ]] || continue
+    grep -q "enable_uart=1" "$CFG" || echo "enable_uart=1" >> "$CFG"
+    ok "UART enabled in $CFG"
+    break
+  done
+  raspi-config nonint do_serial_cons 1 2>/dev/null && ok "Serial console disabled" || \
+    warn "Could not disable serial console via raspi-config — do it manually"
+else
+  info "USB GPS mode — UART configuration skipped"
+fi
+
+# ── 3/8  Fetch code ───────────────────────────────────────────────────────
+step 3 "Fetching KESTREL platform code"
+if [[ -d "$INSTALL_DIR/.git" ]]; then
+  info "Updating existing install at $INSTALL_DIR"
+  git -C "$INSTALL_DIR" fetch origin
+  git -C "$INSTALL_DIR" reset --hard origin/main
+else
+  info "Cloning from $REPO_URL"
+  git clone "$REPO_URL" "$INSTALL_DIR" --depth 1
+fi
+ok "Code ready at $INSTALL_DIR"
+
+# ── 4/8  Python venv ─────────────────────────────────────────────────────
+step 4 "Python virtual environment"
+python3 -m venv "$INSTALL_DIR/venv" --upgrade-deps
+"$INSTALL_DIR/venv/bin/pip" install --upgrade pip -q
+"$INSTALL_DIR/venv/bin/pip" install \
+  -r "$INSTALL_DIR/kestrel-node/requirements.txt" -q
+ok "Python dependencies installed"
+
+# pyrtlsdr 0.2.x uses a bare 'import pkg_resources' which is absent from
+# Python 3.13 venvs by default.  Patch it in-place; idempotent if already done.
+bash "$INSTALL_DIR/scripts/patch-pyrtlsdr.sh" "$INSTALL_DIR/venv"
+
+# Confirm pyrtlsdr imports cleanly before the node starts.
+# librtlsdr.so must be present (installed above in step 1).
+if ! "$INSTALL_DIR/venv/bin/python" -c "import rtlsdr" 2>/dev/null; then
+  fail "pyrtlsdr failed to import — check librtlsdr-dev is installed and the patch ran cleanly"
+fi
+ok "RTL-SDR Python binding OK"
+
+# ── 5/8  Configuration ────────────────────────────────────────────────────
+if [[ "$GPS_MODE" == "uart" ]]; then
+  GPS_PORT="/dev/ttyAMA0"
+else
+  GPS_PORT="/dev/ttyGPS"   # stable symlink from 21-ublox-gps.rules
+fi
+step 5 "Writing node configuration"
+mkdir -p "$CONFIG_DIR" "$LOG_DIR"
+
+cat > "$CONFIG_DIR/config.yaml" << YAML
+# KESTREL Node Configuration
+# Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Node: ${NODE_ID}
+
+node_id: "${NODE_ID}"
+site_name: "default"
+
+mqtt:
+  host: "${SERVER_IP}"
+  host_fallback: "${MQTT_FALLBACK}"
+  port: 1883
+  connect_timeout_s: 10
+  user: "${MQTT_USER}"
+  password: "${MQTT_PASS}"
+  tls: false
+  topic_prefix: "kestrel"
+
+gps:
+  serial_port: "${GPS_PORT}"   # /dev/ttyGPS = udev symlink to the u-blox NEO-M9N
+  baud: 38400
+  mode: "${GPS_MODE}"
+  auto_detect: false         # set true only if port assignment is unknown
+
+wifi:
+  enabled_2g: true
+  interface_2g: "${WIFI_IFACE}"
+  enabled_5g: ${WIFI_5G_STR}
+  interface_5g: "${WIFI_IFACE_5G:-wlan2}"
+
+bt:
+  enabled: true
+  hci_index: 1              # nRF52840 dongle — Pi onboard BT is hci0
+  coded_phy: true
+  backend: auto             # direct HCI access to the dongle, bleak fallback
+
+sdr:
+  enabled: ${SDR_STR}
+  device_index: 0
+
+heartbeat_interval_s: 10
+dedup_window_s: 2.0
+max_queue_size: 1000
+YAML
+chmod 640 "$CONFIG_DIR/config.yaml"
+ok "Config written to $CONFIG_DIR/config.yaml"
+
+# ── 6/8  GPS and network ownership ───────────────────────────────────────
+step 6 "GPS and network ownership"
+
+# The KESTREL agent talks to the u-blox receiver directly over serial (UBX
+# NAV-PVT).  gpsd must NOT run: it opens the same port, steals bytes and
+# reconfigures the receiver's protocol output.  Remove/mask it if present.
+if systemctl list-unit-files 2>/dev/null | grep -q '^gpsd'; then
+  systemctl disable --now gpsd.socket gpsd.service 2>/dev/null || true
+  systemctl mask gpsd.socket gpsd.service 2>/dev/null || true
+  ok "gpsd disabled and masked (agent owns the GPS port)"
+else
+  ok "gpsd not installed (agent owns the GPS port)"
+fi
+
+# NetworkManager must leave the monitor-mode adapters alone, but keep
+# managing eth0.  Unmanaging wlan1/wlan2 replaces 'airmon-ng check kill',
+# which stopped NetworkManager entirely and could drop the node's wired IP.
+if [[ -d /etc/NetworkManager/conf.d ]]; then
+  cat > /etc/NetworkManager/conf.d/99-kestrel-monitor.conf << 'NMCONF'
+[keyfile]
+unmanaged-devices=interface-name:wlan1;interface-name:wlan2
+NMCONF
+  systemctl reload NetworkManager 2>/dev/null || true
+  ok "NetworkManager will ignore wlan1/wlan2"
+fi
+
+# Post-install GPS device check
+if [[ "$GPS_MODE" != "uart" ]]; then
+  echo ""
+  if [[ -e "/dev/ttyACM0" || -e "/dev/ttyGPS" ]]; then
+    ok "GPS device found: $(ls /dev/ttyACM0 /dev/ttyGPS 2>/dev/null | head -1)"
+  else
+    warn "GPS device not found at /dev/ttyACM0 or /dev/ttyGPS"
+    warn "Plug in the u-blox NEO-M9N USB receiver, then run:"
+    warn "  ls /dev/ttyACM* /dev/ttyGPS"
+    warn "  sudo systemctl restart kestrel-node"
+  fi
+fi
+
+# ── 7/8  systemd service ──────────────────────────────────────────────────
+step 7 "systemd service"
+cp "$INSTALL_DIR/kestrel-node/systemd/kestrel-node.service" /etc/systemd/system/
+chmod +x "$INSTALL_DIR/kestrel-node/systemd/setup_interfaces.sh"
+
+# Patch install dir and config path if non-default location
+sed -i \
+  -e "s|/opt/kestrel-node|${INSTALL_DIR}|g" \
+  -e "s|KESTREL_CONFIG=.*\"|KESTREL_CONFIG=${CONFIG_DIR}/config.yaml\"|" \
+  /etc/systemd/system/kestrel-node.service
+
+systemctl daemon-reload
+systemctl enable kestrel-node.service --quiet
+ok "kestrel-node.service installed and enabled"
+
+# ── 8/8  Hostname ─────────────────────────────────────────────────────────
+step 8 "Hostname"
+NEW_HOST=$(echo "$NODE_ID" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
+if [[ "$(hostname)" != "$NEW_HOST" ]]; then
+  hostnamectl set-hostname "$NEW_HOST" 2>/dev/null && ok "Hostname → $NEW_HOST" || \
+    warn "Could not set hostname — do manually: sudo hostnamectl set-hostname $NEW_HOST"
+else
+  ok "Hostname already set ($NEW_HOST)"
+fi
+
+# ── Summary ───────────────────────────────────────────────────────────────
+echo ""
+echo -e "${BOLD}╔═══════════════════════════════════════════════╗${NC}"
+echo -e "${BOLD}║           Deployment Complete!                ║${NC}"
+echo -e "${BOLD}╚═══════════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  ${GREEN}Node ID    :${NC} ${NODE_ID}"
+echo -e "  ${GREEN}Server     :${NC} ${SERVER_IP}"
+echo -e "  ${GREEN}Wi-Fi 2.4G :${NC} ${WIFI_IFACE}"
+if [[ -n "$WIFI_IFACE_5G" ]]; then
+  echo -e "  ${GREEN}Wi-Fi 5G   :${NC} ${WIFI_IFACE_5G}"
+fi
+echo -e "  ${GREEN}Service    :${NC} kestrel-node  (auto-starts on boot)"
+echo -e "  ${GREEN}Config     :${NC} ${CONFIG_DIR}/config.yaml"
+echo -e "  ${GREEN}Logs       :${NC} journalctl -fu kestrel-node"
+echo ""
+if [[ "$GPS_MODE" == "uart" ]]; then
+  echo -e "  ${YELLOW}⚠  A reboot is required to activate UART for GPS.${NC}"
+  echo ""
+fi
+echo "  Post-deployment verification:"
+echo "    sudo systemctl status kestrel-node"
+echo "    sudo journalctl -fu kestrel-node"
+echo ""
+
+if [[ "$UNATTENDED" == false ]]; then
+  echo ""
+  echo -e "  ${YELLOW}Tip: The Pi 4 runs warm under load. A heatsink is strongly${NC}"
+  echo -e "  ${YELLOW}recommended if the node will be deployed in an enclosure.${NC}"
+  read -rp "  Reboot now? [Y/n]: " RB
+  [[ "${RB,,}" == "n" ]] || reboot
+fi

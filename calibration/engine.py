@@ -14,7 +14,7 @@ This is a standard ordinary least-squares problem after the log transform.
 Inputs
 ------
 A list of CalibrationSamples, each containing:
-  - node_id:   which ARGUS node recorded it
+  - node_id:   which KESTREL node recorded it
   - rssi:      dBm reading from that node
   - true_dist: ground-truth distance (metres) from node to drone
 

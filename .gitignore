@@ -1,9 +1,9 @@
 # ── Secrets & local config ─────────────────────────────────────
-aegis-server/docker/.env
-aegis-server/docker/mosquitto_passwd
-aegis-server/docker/passwd
-aegis-server/docker/docker-compose.override.yml
-aegis-server/analysis/calibration.yaml
+kestrel-server/docker/.env
+kestrel-server/docker/mosquitto_passwd
+kestrel-server/docker/passwd
+kestrel-server/docker/docker-compose.override.yml
+kestrel-server/analysis/calibration.yaml
 
 # ── Python ─────────────────────────────────────────────────────
 __pycache__/
@@ -19,8 +19,8 @@ venv/
 env/
 
 # ── Node / UI ──────────────────────────────────────────────────
-aegis-shield/node_modules/
-aegis-shield/dist/
+kestrel-dashboard/node_modules/
+kestrel-dashboard/dist/
 
 # ── Claude Code ────────────────────────────────────────────────
 .claude/
@@ -33,6 +33,6 @@ Thumbs.db
 .idea/
 *.swp
 
-# AEGIS Shield build-time secrets (CARTO key)
-aegis-shield/.env.local
-aegis-shield/.env.*.local
+# KESTREL dashboard build-time secrets (CARTO key)
+kestrel-dashboard/.env.local
+kestrel-dashboard/.env.*.local

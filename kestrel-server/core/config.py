@@ -1,0 +1,115 @@
+"""
+core/config.py
+==============
+Server configuration via environment variables.
+Uses pydantic-settings for validation and .env file support.
+"""
+
+from functools import lru_cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    # ---- API Authentication ----
+    # Set to a non-empty string to require X-Api-Key header on all API requests.
+    # Leave empty to disable auth (development / trusted LAN only).
+    api_key: str = ""
+
+    # ---- Database ----
+    db_host: str = "localhost"
+    db_port: int = 5432
+    db_name: str = "ridmesh"
+    db_user: str = "ridmesh"
+    db_password: str = "changeme"
+
+    @property
+    def db_dsn(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    @property
+    def db_dsn_sync(self) -> str:
+        return (
+            f"postgresql://{self.db_user}:{self.db_password}"
+            f"@{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+
+    # ---- MQTT ----
+    mqtt_host: str = "localhost"
+    mqtt_port: int = 1883
+    mqtt_user: str = "kestrel"
+    mqtt_password: str = "changeme"
+    mqtt_topic_prefix: str = "kestrel"
+
+    # ---- Alert engine ----
+    alert_no_rid_min_alt_m: float = 30.0       # Only alert if drone is above this AGL
+    alert_speed_threshold_ms: float = 30.0     # Flag suspiciously fast drones
+    alert_operator_max_km: float = 5.0         # Flag operator position farther than this from the drone (possible spoof)
+    alert_dedup_window_s: int = 60             # Don't re-alert for same drone within window
+
+    # RF contacts (SDR-classified links)
+    rf_correlation_window_s: int = 20          # RID track must be this fresh to correlate
+    rf_correlation_radius_m: float = 750.0     # ...and within this distance of the node
+    rf_alert_min_confidence: float = 0.6       # Below this, don't raise an RF alert
+    rf_contact_ttl_s: int = 120                # Drop RF contacts from live state after this
+
+    # ---- Live map freshness ----
+    # A contact (drone or RF) shows solid when seen within live_active_s, dims
+    # when older, and drops off the live map entirely past live_window_s. Kept
+    # short so the map reflects what is flying now; everything stays in the DB
+    # for the Flight History view regardless.
+    live_window_s: int = 900                   # Remove from live map after this (15 min)
+    live_active_s: int = 120                   # Within this = live/solid; older = stale/dimmed
+
+    # ---- Remote ID make/model reference ----
+    # FAA DoC API root used to build the serial-prefix -> make/model table.
+    # The server scrapes this (needs outbound network), so a locked-down box
+    # can clear it and import a CSV instead. Editable in System > Settings.
+    rid_doc_source_url: str = "https://uasdoc.faa.gov/api/v1"
+
+    # ---- WebSocket ----
+    ws_broadcast_interval_ms: int = 500        # Push live state to clients every N ms
+
+    # ---- System health ----
+    server_health_interval_s: int = 20         # How often the server samples its own health
+
+    # ---- Flight history ----
+    flight_gap_s: int = 300                     # Detections >this apart start a new flight (sortie)
+    flight_min_points: int = 3                  # Fewer points than this is a stray ping, not a flight
+
+    # ---- Retention ----
+    detection_retention_days: int = 30
+    alert_retention_days: int = 90
+
+    # ---- Notifications (Pushover) ----
+    # Disabled by default. Create a Pushover application for the API token and
+    # use your user key or a delivery-group key as the recipient. Secrets go in
+    # .env (gitignored), never in the repo.
+    pushover_enabled: bool = False
+    pushover_token: str = ""                     # Pushover application API token
+    pushover_user: str = ""                      # user key OR delivery-group key
+    pushover_min_level: str = "medium"           # medium | high — alerts below this don't push
+    pushover_cooldown_s: int = 600               # per-drone/node re-push cooldown (escalation overrides)
+    pushover_max_per_hour: int = 30              # global safety cap against floods
+    # Categories that go Pushover Emergency (priority 2 — repeats until acked).
+    # CSV, e.g. "spoofed_position,gps_jamming". Overrides min_level for those.
+    pushover_emergency_categories: str = ""
+    pushover_emergency_retry_s: int = 60         # Emergency repeat interval (>=30)
+    pushover_emergency_expire_s: int = 1800      # Emergency stops repeating after this
+    # Critical node-health pushes (separate from drone alerts).
+    pushover_health_enabled: bool = True
+    pushover_temp_crit_c: float = 80.0           # Push when a node's CPU temp >= this
+    pushover_disk_crit_pct: float = 95.0         # Push when a node's disk use >= this
+
+    @property
+    def pushover_emergency_set(self) -> set[str]:
+        return {c.strip() for c in self.pushover_emergency_categories.split(",") if c.strip()}
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

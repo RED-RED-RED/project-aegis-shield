@@ -1,4 +1,4 @@
-# Makefile — AEGIS Platform development shortcuts
+# Makefile — KESTREL Platform development shortcuts
 .PHONY: test test-node test-server test-cal ui-build ui-dev \
         server-up server-down server-logs server-rebuild \
         node-deploy node-start node-logs node-status \
@@ -12,69 +12,69 @@ test: test-node test-server test-cal
 	@echo "  ✓ All tests passed"
 
 test-node:
-	@echo "── ARGUS Node — parser tests (11) ──"
-	python -m pytest argus-node/tests/ -v
+	@echo "── KESTREL Node — parser tests (11) ──"
+	python -m pytest kestrel-node/tests/ -v
 
 test-server:
-	@echo "── AEGIS Server — alert engine + analysis + integrations ──"
-	pip install -q -r aegis-server/requirements-dev.txt
-	python -m pytest aegis-server/tests/ -v
+	@echo "── KESTREL Server — alert engine + analysis + integrations ──"
+	pip install -q -r kestrel-server/requirements-dev.txt
+	python -m pytest kestrel-server/tests/ -v
 
 test-cal:
 	@echo "── Calibration — engine + collector + writer (31) ──"
 	python -m pytest calibration/tests/ -v
 
-# ── AEGIS Shield (UI) ──────────────────────────────────────────────────────
+# ── KESTREL dashboard (UI) ──────────────────────────────────────────────────────
 
 ui-build:
-	cd aegis-shield && npm install && npm run build
-	@echo "  ✓ AEGIS Shield built → aegis-shield/dist/"
+	cd kestrel-dashboard && npm install && npm run build
+	@echo "  ✓ KESTREL dashboard built → kestrel-dashboard/dist/"
 
 ui-dev:
-	cd aegis-shield && npm install && npm run dev
+	cd kestrel-dashboard && npm install && npm run dev
 
-# ── AEGIS Server (Docker Compose) ─────────────────────────────────────────
+# ── KESTREL Server (Docker Compose) ─────────────────────────────────────────
 
 server-up:
-	@test -f aegis-server/docker/.env || \
-	  (cp aegis-server/docker/.env.example aegis-server/docker/.env && \
-	   echo "  Created aegis-server/docker/.env — set passwords before starting" && exit 1)
-	cd aegis-server/docker && docker compose up -d
-	@echo "  ✓ AEGIS Server stack running"
-	@echo "    AEGIS Shield : http://localhost"
+	@test -f kestrel-server/docker/.env || \
+	  (cp kestrel-server/docker/.env.example kestrel-server/docker/.env && \
+	   echo "  Created kestrel-server/docker/.env — set passwords before starting" && exit 1)
+	cd kestrel-server/docker && docker compose up -d
+	@echo "  ✓ KESTREL Server stack running"
+	@echo "    KESTREL dashboard : http://localhost"
 	@echo "    API          : http://localhost:8000"
 	@echo "    MQTT         : localhost:1883"
 
 server-down:
-	cd aegis-server/docker && docker compose down
+	cd kestrel-server/docker && docker compose down
 
 server-logs:
-	cd aegis-server/docker && docker compose logs -f aegis-server
+	cd kestrel-server/docker && docker compose logs -f kestrel-server
 
 server-rebuild:
-	cd aegis-server/docker && docker compose up -d --build aegis-server
+	cd kestrel-server/docker && docker compose up -d --build kestrel-server
 
 server-status:
-	cd aegis-server/docker && docker compose ps
+	cd kestrel-server/docker && docker compose ps
 
-# ── ARGUS Node ─────────────────────────────────────────────────────────────
+# ── KESTREL Node ─────────────────────────────────────────────────────────────
 
 node-deploy:
 	@echo "  Deploy to a Pi with:"
-	@echo "  scp scripts/deploy-argus-node.sh pi@<PI_IP>:~"
-	@echo "  ssh pi@<PI_IP> 'sudo bash ~/deploy-argus-node.sh'"
+	@echo "  scp scripts/deploy-kestrel-node.sh pi@<PI_IP>:~"
+	@echo "  ssh pi@<PI_IP> 'sudo bash ~/deploy-kestrel-node.sh'"
 
 node-start:
-	sudo systemctl start argus-node
+	sudo systemctl start kestrel-node
 
 node-stop:
-	sudo systemctl stop argus-node
+	sudo systemctl stop kestrel-node
 
 node-logs:
-	sudo journalctl -fu argus-node
+	sudo journalctl -fu kestrel-node
 
 node-status:
-	sudo systemctl status argus-node
+	sudo systemctl status kestrel-node
 
 # ── Calibration ────────────────────────────────────────────────────────────
 
@@ -96,7 +96,7 @@ healthcheck:
 update:          ## Update the server stack (pull, rebuild UI, rebuild API container)
 	bash scripts/update.sh server
 
-update-node:     ## Update this ARGUS node (pull, update deps, restart service)
+update-node:     ## Update this KESTREL node (pull, update deps, restart service)
 	sudo bash scripts/update.sh node
 
 version:         ## Show current commit + API version
@@ -105,11 +105,11 @@ version:         ## Show current commit + API version
 # ── Linting ────────────────────────────────────────────────────────────────
 
 lint:
-	@find argus-node aegis-server calibration -name "*.py" \
+	@find kestrel-node kestrel-server calibration -name "*.py" \
 	  -not -path "*/__pycache__/*" | xargs python3 -m py_compile
 	@echo "  ✓ Python syntax OK"
 	@command -v shellcheck >/dev/null 2>&1 && \
-	  shellcheck scripts/*.sh argus-node/systemd/*.sh --severity=warning && \
+	  shellcheck scripts/*.sh kestrel-node/systemd/*.sh --severity=warning && \
 	  echo "  ✓ Shell scripts OK" || echo "  (shellcheck not installed — skipping)"
 
 # ── Cleanup ────────────────────────────────────────────────────────────────
@@ -119,37 +119,37 @@ clean:
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
 	find . -name "*.pyc" -delete 2>/dev/null || true
 	find . -name "*.bak_*" -delete 2>/dev/null || true
-	rm -rf aegis-shield/dist aegis-shield/node_modules 2>/dev/null || true
+	rm -rf kestrel-dashboard/dist kestrel-dashboard/node_modules 2>/dev/null || true
 	@echo "  ✓ Cleaned"
 
 # ── Help ───────────────────────────────────────────────────────────────────
 
 help:
 	@echo ""
-	@echo "  AEGIS Platform — Make targets"
+	@echo "  KESTREL Platform — Make targets"
 	@echo "  ════════════════════════════════════════════════"
 	@echo ""
 	@echo "  Testing"
 	@echo "    make test           Run all tests"
-	@echo "    make test-node      ARGUS Node parser (11)"
-	@echo "    make test-server    AEGIS Server — alerts + analysis + integrations"
+	@echo "    make test-node      KESTREL Node parser (11)"
+	@echo "    make test-server    KESTREL Server — alerts + analysis + integrations"
 	@echo "    make test-cal       Calibration engine (31)"
 	@echo ""
-	@echo "  AEGIS Shield (UI)"
-	@echo "    make ui-build       Production build → aegis-shield/dist/"
+	@echo "  KESTREL dashboard (UI)"
+	@echo "    make ui-build       Production build → kestrel-dashboard/dist/"
 	@echo "    make ui-dev         Dev server on :5173 (hot reload)"
 	@echo ""
-	@echo "  AEGIS Server"
+	@echo "  KESTREL Server"
 	@echo "    make server-up      Start Docker stack"
 	@echo "    make server-down    Stop Docker stack"
-	@echo "    make server-logs    Follow aegis-server logs"
+	@echo "    make server-logs    Follow kestrel-server logs"
 	@echo "    make server-rebuild Rebuild API container"
 	@echo "    make server-status  Show container status"
 	@echo ""
-	@echo "  ARGUS Nodes"
+	@echo "  KESTREL Nodes"
 	@echo "    make node-deploy    Print deployment instructions"
-	@echo "    make node-start     Start argus-node service (local)"
-	@echo "    make node-logs      Follow argus-node journal"
+	@echo "    make node-start     Start kestrel-node service (local)"
+	@echo "    make node-logs      Follow kestrel-node journal"
 	@echo "    make node-status    Service status"
 	@echo ""
 	@echo "  Operations"

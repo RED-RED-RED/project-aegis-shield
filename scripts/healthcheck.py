@@ -68,7 +68,7 @@ def check_websocket(host, port, label, timeout=4):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AEGIS health check")
+    parser = argparse.ArgumentParser(description="KESTREL health check")
     parser.add_argument("--server", default="localhost", help="Server IP/hostname")
     parser.add_argument("--api-port",   type=int, default=8000)
     parser.add_argument("--http-port",  type=int, default=80)
@@ -77,7 +77,7 @@ def main():
     args = parser.parse_args()
 
     h = args.server
-    print(f"\n{BOLD}AEGIS Deployment Health Check{RESET}")
+    print(f"\n{BOLD}KESTREL Deployment Health Check{RESET}")
     print(f"Target server: {BOLD}{h}{RESET}")
     print("─" * 44)
 
@@ -87,7 +87,7 @@ def main():
     head("Network")
     results["mqtt"]  = check_tcp(h, args.mqtt_port,  "MQTT broker (Mosquitto)")
     results["api"]   = check_tcp(h, args.api_port,   "FastAPI backend")
-    results["http"]  = check_tcp(h, args.http_port,  "Nginx / AEGIS Shield")
+    results["http"]  = check_tcp(h, args.http_port,  "Nginx / KESTREL dashboard")
     results["db"]    = check_tcp(h, args.db_port,    "TimescaleDB")
 
     # ── API endpoints ──────────────────────────────────────────────────────
@@ -125,19 +125,19 @@ def main():
 
     check_http(f"{base}/api/analysis/stats", "GET /api/analysis/stats")
 
-    # ── AEGIS Shield ──────────────────────────────────────────────────────────
-    head("AEGIS Shield")
+    # ── KESTREL dashboard ──────────────────────────────────────────────────────────
+    head("KESTREL dashboard")
     try:
         req = Request(f"http://{h}:{args.http_port}/",
                       headers={"Accept": "text/html"})
         with urlopen(req, timeout=5) as r:
             body = r.read().decode()
-        if "RID" in body or "argus" in body.lower():
-            ok("AEGIS Shield HTML served correctly")
+        if "RID" in body or "kestrel" in body.lower():
+            ok("KESTREL dashboard HTML served correctly")
         else:
-            warn("AEGIS Shield reachable but RID content not detected")
+            warn("KESTREL dashboard reachable but RID content not detected")
     except Exception as e:
-        fail(f"AEGIS Shield — {e}")
+        fail(f"KESTREL dashboard — {e}")
 
     # ── Summary ────────────────────────────────────────────────────────────
     head("Summary")

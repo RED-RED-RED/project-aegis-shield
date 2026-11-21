@@ -30,8 +30,8 @@ from calibration.engine import CalibrationResult
 
 log = logging.getLogger("calibration.writer")
 
-DEFAULT_YAML_PATH = Path(__file__).parent.parent / "aegis-server" / "analysis" / "calibration.yaml"
-TRILATERATION_PY  = Path(__file__).parent.parent / "aegis-server" / "analysis" / "trilateration.py"
+DEFAULT_YAML_PATH = Path(__file__).parent.parent / "kestrel-server" / "analysis" / "calibration.yaml"
+TRILATERATION_PY  = Path(__file__).parent.parent / "kestrel-server" / "analysis" / "trilateration.py"
 
 
 def write_calibration_yaml(
@@ -49,14 +49,14 @@ def write_calibration_yaml(
           rssi_ref_dbm: -20.0
           path_loss_exp: 2.7
         nodes:
-          ARGUS-01:
+          KN-01:
             rssi_ref_dbm: -18.4
             path_loss_exp: 2.45
             quality: excellent
             r_squared: 0.912
             rmse_m: 48.2
             sample_count: 347
-          ARGUS-02:
+          KN-02:
             ...
     """
     out_path = output_path or DEFAULT_YAML_PATH
@@ -159,11 +159,11 @@ def generate_patch_snippet(results: dict[str, CalibrationResult]) -> str:
     their config if they prefer manual application.
     """
     lines = [
-        "# ── AEGIS Calibration Results ──────────────────────────────",
+        "# ── KESTREL Calibration Results ──────────────────────────────",
         f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "#",
         "# Paste into server/analysis/calibration.yaml",
-        "# or set ARGUS_CALIBRATION_PATH env var to point at a custom file",
+        "# or set KESTREL_CALIBRATION_PATH env var to point at a custom file",
         "#",
     ]
 

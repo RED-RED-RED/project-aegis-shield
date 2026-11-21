@@ -2,7 +2,7 @@
 # =============================================================================
 # update-doc-list.sh — rebuild the Remote ID make/model reference table
 # =============================================================================
-# The AEGIS server resolves a broadcast Remote ID serial to a drone make/model
+# The KESTREL server resolves a broadcast Remote ID serial to a drone make/model
 # by longest-prefix match against serial prefixes scraped from the FAA
 # Declaration of Compliance (DoC) serial lists. This script triggers that
 # rebuild (or imports a CSV on an air-gapped box). Modes:
@@ -17,13 +17,13 @@
 #   bash scripts/update-doc-list.sh --file prefixes.csv
 #
 # Options:
-#   --server URL   AEGIS server base (default http://localhost:8000)
+#   --server URL   KESTREL server base (default http://localhost:8000)
 #   --url URL      One-off FAA API root (overrides the setting)
 #   --file PATH    Import a local CSV instead of scraping
 #
 # The scrape runs in the background on the server; this returns once it has
 # started. Watch progress in System > Settings or `make server-logs`.
-# If AEGIS_API_KEY is set in the environment, it is sent as X-Api-Key.
+# If KESTREL_API_KEY is set in the environment, it is sent as X-Api-Key.
 # Intended for manual use or a monthly cron/systemd timer on the server.
 # =============================================================================
 set -euo pipefail
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 HDR=(-H "Content-Type: application/json")
-[[ -n "${AEGIS_API_KEY:-}" ]] && HDR+=(-H "X-Api-Key: ${AEGIS_API_KEY}")
+[[ -n "${KESTREL_API_KEY:-}" ]] && HDR+=(-H "X-Api-Key: ${KESTREL_API_KEY}")
 
 if [[ -n "$FILE" ]]; then
   [[ -f "$FILE" ]] || { echo "No such file: $FILE" >&2; exit 1; }

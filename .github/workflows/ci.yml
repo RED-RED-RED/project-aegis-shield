@@ -12,30 +12,30 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: aegis-server
+        working-directory: kestrel-server
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: aegis-server/requirements-dev.txt
+          cache-dependency-path: kestrel-server/requirements-dev.txt
       - run: pip install -r requirements-dev.txt
       - run: pytest -q
 
   node-tests:
-    name: ARGUS node tests
+    name: KESTREL node tests
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: argus-node
+        working-directory: kestrel-node
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: argus-node/requirements.txt
+          cache-dependency-path: kestrel-node/requirements.txt
       # RTL-SDR system library, so pyrtlsdr imports and the SDR env tests run
       # (rather than skip) — this also exercises the deployment path.
       - name: Install librtlsdr
@@ -70,13 +70,13 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: aegis-shield
+        working-directory: kestrel-dashboard
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-          cache-dependency-path: aegis-shield/package-lock.json
+          cache-dependency-path: kestrel-dashboard/package-lock.json
       - run: npm ci
       - run: npm run build

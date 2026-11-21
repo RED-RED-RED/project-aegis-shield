@@ -1,0 +1,63 @@
+# /etc/kestrel-node/config.yaml
+# ============================================================
+# KESTREL Node Configuration
+# Hardware: Raspberry Pi 4 Model B (2 GB)
+# Copy to /etc/kestrel-node/config.yaml on each Pi node.
+# Override any value with environment variables (see settings.py).
+# ============================================================
+
+node_id: "KN-01"          # Unique ID for this KESTREL node
+site_name: "perimeter-north"
+
+# ---- MQTT (KESTREL platform) ----
+mqtt:
+  host: "192.168.1.100"     # Primary: LAN IP of your KESTREL server (used when the node is on-site)
+  host_fallback: ""         # Optional: server's Tailscale name (e.g. "kestrel-server"). When the LAN
+                            #   IP is unreachable the node reconnects over Tailscale, then flips back.
+                            #   Leave "" to disable. Requires Tailscale running on node + server.
+  port: 1883
+  connect_timeout_s: 10     # Switch to the other host if one doesn't connect within this many seconds
+  user: "kestrel"
+  password: "changeme"
+  tls: false
+  topic_prefix: "kestrel"
+
+# ---- GPS (u-blox NEO-M9N on USB — recommended default) ----
+gps:
+  serial_port: "/dev/ttyACM0"   # USB GPS (NEO-M9N default)
+  # serial_port: "/dev/ttyAMA0" # UART GPS (legacy)
+  baud: 38400                    # NEO-M9N USB default — NOT 9600
+  mode: "usb"                   # "usb" or "uart"
+  auto_detect: false             # set true only if port assignment is unknown
+
+# ---- Wi-Fi NAN (Alfa AWUS036ACM) ----
+wifi:
+  # Primary adapter — 2.4 GHz NAN scanning
+  interface_2g: "wlan1"
+  enabled_2g: true
+  channels_2g: [1, 6, 11]
+  dwell_ms_2g: 200
+
+  # Secondary adapter — 5 GHz NAN scanning
+  # Requires second AWUS036ACM or compatible dual-band adapter
+  interface_5g: "wlan2"
+  enabled_5g: false          # disabled by default — enable when second adapter present
+  channels_5g: [36, 40, 44, 48, 149, 153, 157, 161]
+  dwell_ms_5g: 200
+
+# ---- Bluetooth (nRF52840 dongle) ----
+bt:
+  enabled: true
+  hci_index: 1              # nRF52840 USB dongle — Pi onboard BT enumerates as hci0
+  coded_phy: true           # BT5 Long Range — disable if dongle doesn't support it
+  backend: auto             # auto: direct HCI on the dongle, bleak fallback | hci | bleak
+
+# ---- RTL-SDR (optional) ----
+sdr:
+  enabled: false            # Set true if RTL-SDR is plugged in
+  device_index: 0
+
+# ---- Agent behaviour ----
+heartbeat_interval_s: 10
+dedup_window_s: 2.0
+max_queue_size: 1000

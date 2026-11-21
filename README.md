@@ -2,7 +2,7 @@
 
 > Multi-node Remote ID detection, threat scoring, and MLAT position estimation
 >
-> _Formerly AEGIS. Internal service, directory, topic, and env-var names still carry the original `aegis-`/`argus-` identifiers and migrate in a later step._
+> _Formerly AEGIS (platform) and ARGUS (nodes). The full rename to KESTREL — directories, services, MQTT topics, env vars, and node callsigns (KN-xx) — is complete; see `docs/kestrel-migration.md` for the fleet cutover steps._
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -60,15 +60,15 @@ KESTREL detects FAA-mandated Remote ID broadcasts from drones across all three r
 
 ```bash
 # 1. Clone
-git clone https://github.com/RED-RED-RED/project-aegis-shield
-cd project-aegis-shield
+git clone https://github.com/RED-RED-RED/project-kestrel
+cd project-kestrel
 
 # 2. Deploy KESTREL Server (Docker installed automatically; Ubuntu 24.04/26.04 LTS,
 #    Debian 12+, or Pi OS 64-bit — a VM or bare metal both work)
-sudo bash scripts/deploy-aegis-server.sh
+sudo bash scripts/deploy-kestrel-server.sh
 
 # 3. Deploy each KESTREL-NODE (run on each Pi)
-sudo bash scripts/deploy-argus-node.sh
+sudo bash scripts/deploy-kestrel-node.sh
 
 # 4. Verify
 python scripts/healthcheck.py --server <SERVER_IP>
@@ -108,10 +108,10 @@ heartbeat      ─── MQTT ───►    │── alert_engine.evaluate   
 
 | Topic | Direction | Content |
 |---|---|---|
-| `argus/<id>/detection` | node → server | Full RID frame, RSSI, node GPS |
-| `argus/<id>/heartbeat` | node → server | CPU, memory, GPS fix, active radios list, jamming/spoofing state, survey status (10s) |
-| `argus/<id>/status` | node → server | `online`/`offline` (LWT, retained) |
-| `argus/<id>/rf_detection` | node → server | SDR-classified RF control/video link — OcuSync, ELRS, FPV video, etc. (optional) |
+| `kestrel/<id>/detection` | node → server | Full RID frame, RSSI, node GPS |
+| `kestrel/<id>/heartbeat` | node → server | CPU, memory, GPS fix, active radios list, jamming/spoofing state, survey status (10s) |
+| `kestrel/<id>/status` | node → server | `online`/`offline` (LWT, retained) |
+| `kestrel/<id>/rf_detection` | node → server | SDR-classified RF control/video link — OcuSync, ELRS, FPV video, etc. (optional) |
 
 **Heartbeat extra fields (NEO-M9N only):**
 
@@ -178,15 +178,15 @@ Any 64-bit Linux machine with Docker. The stack (TimescaleDB + Mosquitto + FastA
 
 ```bash
 # Interactive
-sudo bash scripts/deploy-aegis-server.sh
+sudo bash scripts/deploy-kestrel-server.sh
 
 # Non-interactive (Ansible, cloud-init, CI)
-AEGIS_DB_PASSWORD=yourdbpass \
-AEGIS_MQTT_PASSWORD=yourmqttpass \
-sudo bash scripts/deploy-aegis-server.sh --yes
+KESTREL_DB_PASSWORD=yourdbpass \
+KESTREL_MQTT_PASSWORD=yourmqttpass \
+sudo bash scripts/deploy-kestrel-server.sh --yes
 ```
 
-The script: installs Docker, builds KESTREL, generates credentials, configures Mosquitto auth, starts all containers via Docker Compose, and installs an `aegis-server.service` systemd unit for auto-start on boot.
+The script: installs Docker, builds KESTREL, generates credentials, configures Mosquitto auth, starts all containers via Docker Compose, and installs an `kestrel-server.service` systemd unit for auto-start on boot.
 
 > **OS support.** Tested on Ubuntu 24.04 and 26.04 LTS, Debian 12+, and Raspberry Pi OS (64-bit). Docker is installed via the official `get.docker.com` convenience script, which tracks new releases — including fresh LTS codenames. On a brand-new release the Docker apt repo can lag by a few days; if the script reports no candidate for your codename, either retry after a day or install the engine against the previous LTS codename:
 > ```bash
@@ -206,14 +206,14 @@ The script: installs Docker, builds KESTREL, generates credentials, configures M
 | Mosquitto | 1883 | MQTT broker (authenticated) |
 | TimescaleDB | 5432 | Internal only |
 
-Credentials are written to `aegis-server/docker/.env` — back this file up.
+Credentials are written to `kestrel-server/docker/.env` — back this file up.
 
 ### Managing the server
 
 ```bash
 make server-up       # Start all containers
 make server-down     # Stop all containers (data volumes are preserved)
-make server-rebuild  # Rebuild and restart the aegis-server container (use after code changes)
+make server-rebuild  # Rebuild and restart the kestrel-server container (use after code changes)
 make server-logs     # Follow live logs from the FastAPI container
 make server-status   # Show container status
 ```
@@ -223,16 +223,16 @@ The four containers that start together:
 | Container | Port | Description |
 |---|---|---|
 | `nginx` | 80 | Serves KESTREL UI and proxies `/api` and `/ws` |
-| `aegis-server` | 8000 (internal) | FastAPI — starts after timescaledb and mosquitto are healthy |
+| `kestrel-server` | 8000 (internal) | FastAPI — starts after timescaledb and mosquitto are healthy |
 | `mosquitto` | 1883 | MQTT broker (authenticated) |
 | `timescaledb` | 5432 (internal) | Time-series database |
 
 ### API authentication
 
-All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default** (safe for trusted LAN deployments). To enable it, set `AEGIS_API_KEY` in `aegis-server/docker/.env`:
+All `/api/*` endpoints and the WebSocket are protected by an optional API key. Authentication is **disabled by default** (safe for trusted LAN deployments). To enable it, set `KESTREL_API_KEY` in `kestrel-server/docker/.env`:
 
 ```env
-AEGIS_API_KEY=your-secret-key-here
+KESTREL_API_KEY=your-secret-key-here
 ```
 
 Once set, every request must include the key as a header:
@@ -246,7 +246,7 @@ The `/health` endpoint is always unauthenticated. It returns server CPU/memory/d
 If you are running KESTREL from the same origin (via Nginx reverse proxy), add the key to the Shield's build environment so it is included in API calls:
 
 ```env
-# aegis-shield/.env.production
+# kestrel-dashboard/.env.production
 VITE_API_KEY=your-secret-key-here
 ```
 
@@ -258,14 +258,14 @@ Flash Pi OS Lite 64-bit to SD card, enable SSH, then:
 
 ```bash
 # Copy project to node
-scp -r aegis-platform/ pi@argus-01.local:~/
-ssh pi@argus-01.local
+scp -r kestrel-platform/ pi@KN-01.local:~/
+ssh pi@KN-01.local
 
 # Interactive install — prompts for all values
-sudo bash aegis-platform/scripts/deploy-argus-node.sh
+sudo bash kestrel-platform/scripts/deploy-kestrel-node.sh
 
 # Non-interactive install (USB GPS, default)
-sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+sudo bash kestrel-platform/scripts/deploy-kestrel-node.sh \
   --unattended \
   --node-id KN-01 \
   --server-ip 192.168.1.100 \
@@ -273,15 +273,15 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh \
 
 # With a Tailscale fallback — node uses the LAN IP on-site, the Tailscale
 # name when remote (see "Remote access — Tailscale" below)
-sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+sudo bash kestrel-platform/scripts/deploy-kestrel-node.sh \
   --unattended \
   --node-id KN-01 \
   --server-ip 192.168.1.100 \
-  --mqtt-fallback aegis-server \
+  --mqtt-fallback kestrel-server \
   --mqtt-password yourmqttpass
 
 # Non-interactive install (legacy UART GPS — requires reboot)
-sudo bash aegis-platform/scripts/deploy-argus-node.sh \
+sudo bash kestrel-platform/scripts/deploy-kestrel-node.sh \
   --unattended \
   --node-id KN-01 \
   --server-ip 192.168.1.100 \
@@ -290,8 +290,8 @@ sudo bash aegis-platform/scripts/deploy-argus-node.sh \
 sudo reboot   # only required for uart mode
 
 # After (re)boot
-sudo systemctl status argus-node
-sudo journalctl -fu argus-node
+sudo systemctl status kestrel-node
+sudo journalctl -fu kestrel-node
 ```
 
 Or run interactively — the script prompts for all values, including GPS mode, and explains each option.
@@ -307,11 +307,11 @@ Or run interactively — the script prompts for all values, including GPS mode, 
 
 ```bash
 # Node 1 (USB GPS)
-sudo bash scripts/deploy-argus-node.sh \
+sudo bash scripts/deploy-kestrel-node.sh \
   --unattended --node-id KN-01 --server-ip 192.168.1.100 --mqtt-password pass
 
 # Node 2
-sudo bash scripts/deploy-argus-node.sh \
+sudo bash scripts/deploy-kestrel-node.sh \
   --unattended --node-id KN-02 --server-ip 192.168.1.100 --mqtt-password pass
 ```
 
@@ -326,18 +326,18 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up            # authenticate once in the browser link it prints
 ```
 
-**2. Name the server and enable MagicDNS.** In the Tailscale admin console, rename the server machine to something stable (e.g. `aegis-server`) and turn on **MagicDNS** (DNS tab) so that name resolves across the tailnet.
+**2. Name the server and enable MagicDNS.** In the Tailscale admin console, rename the server machine to something stable (e.g. `kestrel-server`) and turn on **MagicDNS** (DNS tab) so that name resolves across the tailnet.
 
-**3. Point nodes at both addresses.** Set the LAN IP as `host` and the server's Tailscale name as `host_fallback` — either at install time (`--mqtt-fallback aegis-server`) or in `/etc/argus-node/config.yaml`:
+**3. Point nodes at both addresses.** Set the LAN IP as `host` and the server's Tailscale name as `host_fallback` — either at install time (`--mqtt-fallback kestrel-server`) or in `/etc/kestrel-node/config.yaml`:
 
 ```yaml
 mqtt:
   host: "192.168.1.100"     # LAN IP — primary, used on-site
-  host_fallback: "aegis-server"   # Tailscale MagicDNS name — used when remote
+  host_fallback: "kestrel-server"   # Tailscale MagicDNS name — used when remote
   connect_timeout_s: 10
 ```
 
-The Mosquitto container binds `0.0.0.0:1883`, so it's already reachable over the `tailscale0` interface — just allow 1883 from the tailnet in the server's firewall if you run one. The tailnet is the trusted network that the platform's LAN-only security model assumes; for tighter control, tag nodes (`tag:aegis-node`) and restrict them to the server with a Tailscale ACL.
+The Mosquitto container binds `0.0.0.0:1883`, so it's already reachable over the `tailscale0` interface — just allow 1883 from the tailnet in the server's firewall if you run one. The tailnet is the trusted network that the platform's LAN-only security model assumes; for tighter control, tag nodes (`tag:kestrel-node`) and restrict them to the server with a Tailscale ACL.
 
 > **Enable API key auth** (see above) whenever the server is reachable beyond your LAN, Tailscale included.
 
@@ -353,7 +353,7 @@ sudo bash scripts/setup-wireguard.sh server
 sudo bash scripts/setup-wireguard.sh node <SERVER_PUBLIC_IP> <NODE_INDEX>
 ```
 
-Or pass `ARGUS_USE_VPN=1` to `deploy-argus-node.sh` and it handles VPN setup automatically. VPN addressing: KESTREL server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`… With WireGuard, set `host_fallback` to the server's VPN address (`10.100.0.1`) for the same LAN-first / VPN-fallback behaviour.
+Or pass `KESTREL_USE_VPN=1` to `deploy-kestrel-node.sh` and it handles VPN setup automatically. VPN addressing: KESTREL server = `10.100.0.1`, nodes = `10.100.0.2`, `.3`, `.4`… With WireGuard, set `host_fallback` to the server's VPN address (`10.100.0.1`) for the same LAN-first / VPN-fallback behaviour.
 
 ### Health check
 
@@ -374,16 +374,16 @@ sudo bash scripts/update.sh server   # Pull latest, rebuild UI, rebuild + restar
 # or: make update
 ```
 
-This runs a fast-forward `git pull`, rebuilds the dashboard (`aegis-shield/dist`, which nginx serves live from a read-only volume, so no nginx restart is needed), then rebuilds and restarts the `aegis-server` container. New database tables are created automatically on startup (`CREATE TABLE IF NOT EXISTS`), so there is no separate migration step. Add `--skip-ui` to leave the dashboard untouched, or `--no-pull` to rebuild the current checkout without fetching.
+This runs a fast-forward `git pull`, rebuilds the dashboard (`kestrel-dashboard/dist`, which nginx serves live from a read-only volume, so no nginx restart is needed), then rebuilds and restarts the `kestrel-server` container. New database tables are created automatically on startup (`CREATE TABLE IF NOT EXISTS`), so there is no separate migration step. Add `--skip-ui` to leave the dashboard untouched, or `--no-pull` to rebuild the current checkout without fetching.
 
-**Node** (run on each Raspberry Pi, repo at `/opt/argus-node`):
+**Node** (run on each Raspberry Pi, repo at `/opt/kestrel-node`):
 
 ```bash
 sudo bash scripts/update.sh node     # Pull latest, update venv deps, re-patch pyrtlsdr, restart the service
 # or: make update-node
 ```
 
-This does `git fetch` + `git reset --hard origin/main`, reinstalls `argus-node/requirements.txt` into the venv, re-applies the Python 3.13 pyrtlsdr patch, and restarts `argus-node.service`.
+This does `git fetch` + `git reset --hard origin/main`, reinstalls `kestrel-node/requirements.txt` into the venv, re-applies the Python 3.13 pyrtlsdr patch, and restarts `kestrel-node.service`.
 
 **Version check** (any host):
 
@@ -408,7 +408,7 @@ KESTREL decodes a broadcast Remote ID serial into a drone make and model. It mat
 
 A matched prefix wins over strict CTA-2063-A validity, since some real products ship serials the standard would reject; validity is still tracked separately for the spoof signal. The **make is anchored to the manufacturer code** (the maker that files the most products under a code owns it): a third-party or "modified" filing sitting in another maker's serial space can't override it, so a DJI airframe stays "DJI" rather than being mislabeled by a modifier's filing — it just loses the model in that case.
 
-A small verified seed (`aegis-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve immediately. To build full coverage, click **Rebuild from FAA** in **System → Settings → Remote ID** (or run it from the server). The server scrapes the FAA DoC API set in `rid_doc_source_url` (default `https://uasdoc.faa.gov/api/v1`): it pages the filing list, pulls each filing's serial snapshot, extracts the prefixes, and loads `prefix → make/model`. It runs in the background with live progress.
+A small verified seed (`kestrel-server/data/rid_identity_seed.json`) ships with the server and loads on first boot, so common drones resolve immediately. To build full coverage, click **Rebuild from FAA** in **System → Settings → Remote ID** (or run it from the server). The server scrapes the FAA DoC API set in `rid_doc_source_url` (default `https://uasdoc.faa.gov/api/v1`): it pages the filing list, pulls each filing's serial snapshot, extracts the prefixes, and loads `prefix → make/model`. It runs in the background with live progress.
 
 ```bash
 bash scripts/update-doc-list.sh                         # scrape the configured FAA API root
@@ -448,12 +448,12 @@ python calibration/calibrate.py \
   --plots
 
 # Outputs:
-#   aegis-server/analysis/calibration.yaml  (per-node fitted parameters)
+#   kestrel-server/analysis/calibration.yaml  (per-node fitted parameters)
 #   calibration/cal_report.txt              (human-readable report)
 #   calibration/cal_plots/                  (diagnostic plots, if matplotlib installed)
 
 # Restart server to load calibration
-cd aegis-server/docker && docker compose restart aegis-server
+cd kestrel-server/docker && docker compose restart kestrel-server
 ```
 
 Supports GPX (DJI Fly, Litchi, Mission Planner), DJI SRT subtitle files, and CSV tracks. Each KESTREL node gets independent fitted parameters. See [`calibration/`](calibration/) for full documentation.
@@ -498,7 +498,7 @@ Alerts can be dismissed individually (× button, visible on hover) or all at onc
 ### Building from source
 
 ```bash
-cd aegis-shield
+cd kestrel-dashboard
 npm install
 npm run dev     # Dev server :5173, proxies /api and /ws to :8000
 npm run build   # Production → dist/ (served by Nginx container)
@@ -632,7 +632,7 @@ KESTREL uses weighted least-squares trilateration on RSSI measurements from ≥ 
 
 **Survey-in weight multiplier:** Nodes that have completed a GPS survey-in (`survey_complete = true`) receive a **3× weight** in the WLS solver. This reflects that their position is precisely known (sub-3m accuracy) rather than estimated from a live GPS fix. Deploy nodes with NEO-M9N receivers and allow the 10-minute survey-in to complete for best MLAT accuracy.
 
-The calibration utility fits `n` and `RSSI_REF` independently per node from a calibration flight, then writes `aegis-server/analysis/calibration.yaml` which the trilateration engine loads at startup.
+The calibration utility fits `n` and `RSSI_REF` independently per node from a calibration flight, then writes `kestrel-server/analysis/calibration.yaml` which the trilateration engine loads at startup.
 
 ---
 
@@ -643,8 +643,8 @@ The calibration utility fits `n` and `RSSI_REF` independently per node from a ca
 `pyrtlsdr` depends on `pkg_resources` which is not included in the default Python 3.13 venv. Fix:
 
 ```bash
-sudo /opt/argus-node/venv/bin/pip install 'setuptools==69.5.1' --force-reinstall --no-binary :all:
-sudo systemctl restart argus-node
+sudo /opt/kestrel-node/venv/bin/pip install 'setuptools==69.5.1' --force-reinstall --no-binary :all:
+sudo systemctl restart kestrel-node
 ```
 
 ### `setup_interfaces.sh: Permission denied` after git pull
@@ -652,8 +652,8 @@ sudo systemctl restart argus-node
 `git reset --hard` strips the execute bit from `setup_interfaces.sh`. Fix:
 
 ```bash
-sudo chmod +x /opt/argus-node/argus-node/systemd/setup_interfaces.sh
-sudo systemctl restart argus-node
+sudo chmod +x /opt/kestrel-node/kestrel-node/systemd/setup_interfaces.sh
+sudo systemctl restart kestrel-node
 ```
 
 To prevent recurrence, the execute bit is tracked in git (`git update-index --chmod=+x`). If it reappears, re-run the `git update-index` command on the dev machine and push.
